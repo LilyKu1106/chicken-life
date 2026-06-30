@@ -10,103 +10,114 @@
 </head>
 <body>
 
+  <!-- ============================================================
+       遊戲整體外框：採 16:9 容器，內部自動縮放，置中顯示
+  ============================================================= -->
   <div id="game-wrapper">
     <div id="game-stage">
 
+      <!-- ========================= 頂部資訊列 ========================= -->
       <header id="top-bar" class="pixel-panel">
         <div class="top-left">
-          <canvas id="top-avatar-canvas" width="32" height="32"></canvas>
-          <div>
-            <span id="chick-name" class="pixel-title">CHICK</span>
-            <span class="pixel-sub">Lv. <span id=\"stat-level\">1</span></span>
-          </div>
+          <canvas id="top-avatar-canvas" class="avatar-canvas" width="320" height="180"></canvas>
+          <span id="chick-name" class="pixel-title">CHICK</span>
+          <span class="pixel-sub">Lv. <span id="stat-level">1</span></span>
         </div>
         <div class="top-mid">
           <span class="pixel-sub">AGE <span id="stat-age">0</span>D</span>
           <span class="pixel-sub" id="stage-label">EGG</span>
         </div>
         <div class="top-right">
-          <span class="pixel-sub">💰 <span id="stat-gold">50</span></span>
-          <button class="icon-btn" data-action="settings" style="margin-left:4px;">⚙️</button>
+          <span class="pixel-icon">💰</span><span id="stat-gold" class="pixel-sub">0</span>
         </div>
       </header>
 
-      <main id="main-scene">
-        <canvas id="bg-canvas"></canvas>
-        <canvas id="chick-canvas"></canvas>
+      <!-- ========================= 主畫面（角色 + 背景） ========================= -->
+      <main id="scene">
+        <canvas id="bg-canvas" width="320" height="180"></canvas>
+        <canvas id="chick-canvas" width="320" height="180"></canvas>
         <div id="poop-layer"></div>
-        <div id="bubble" class="pixel-panel hidden">🍗</div>
-        <div id="toast" class="pixel-panel hidden"></div>
-        
-        <div id="scene-selectors">
-          <button class="bg-btn" data-bg="room">🏠</button>
-          <button class="bg-btn" data-bg="grass">🌱</button>
-          <button class="bg-btn" data-bg="farm">🚜</button>
-          <button class="bg-btn" data-bg="forest">🌲</button>
-          <button class="bg-btn" data-bg="snow">❄️</button>
-          <button class="bg-btn" data-bg="night">🌙</button>
+        <div id="bubble" class="hidden pixel-panel">!</div>
+
+        <!-- 背景切換 -->
+        <div id="bg-switcher">
+          <button class="bg-btn" data-bg="room" title="房間">🏠</button>
+          <button class="bg-btn" data-bg="grass" title="草地">🌱</button>
+          <button class="bg-btn" data-bg="farm" title="農場">🚜</button>
+          <button class="bg-btn" data-bg="forest" title="森林">🌲</button>
+          <button class="bg-btn" data-bg="snow" title="雪地">❄️</button>
+          <button class="bg-btn" data-bg="night" title="夜晚">🌙</button>
         </div>
       </main>
 
-      <section id="stat-bars">
-        <div class="bar-row">
-          <span class="bar-label">❤️健康</span>
-          <div class="bar-bg"><div id="bar-health" class="bar-fill" style="width:100%;"></div></div>
+      <!-- ========================= 狀態列 ========================= -->
+      <section id="stat-bars" class="pixel-panel">
+        <div class="stat-row">
+          <span class="pixel-icon">❤️</span>
+          <div class="bar-track"><div id="bar-health" class="bar-fill bar-health"></div></div>
         </div>
-        <div class="bar-row">
-          <span class="bar-label">🍗飽食</span>
-          <div class="bar-bg"><div id="bar-hunger" class="bar-fill" style="width:100%;"></div></div>
+        <div class="stat-row">
+          <span class="pixel-icon">🍗</span>
+          <div class="bar-track"><div id="bar-hunger" class="bar-fill bar-hunger"></div></div>
         </div>
-        <div class="bar-row">
-          <span class="bar-label">😊心情</span>
-          <div class="bar-bg"><div id="bar-happy" class="bar-fill" style="width:100%;"></div></div>
+        <div class="stat-row">
+          <span class="pixel-icon">😊</span>
+          <div class="bar-track"><div id="bar-happy" class="bar-fill bar-happy"></div></div>
         </div>
-        <div class="bar-row">
-          <span class="bar-label">⚡活力</span>
-          <div class="bar-bg"><div id="bar-energy" class="bar-fill" style="width:100%;"></div></div>
+        <div class="stat-row">
+          <span class="pixel-icon">⚡</span>
+          <div class="bar-track"><div id="bar-energy" class="bar-fill bar-energy"></div></div>
         </div>
-        <div class="bar-row">
-          <span class="bar-label">🧼清潔</span>
-          <div class="bar-bg"><div id="bar-clean" class="bar-fill" style="width:100%;"></div></div>
+        <div class="stat-row">
+          <span class="pixel-icon">🛁</span>
+          <div class="bar-track"><div id="bar-clean" class="bar-fill bar-clean"></div></div>
         </div>
-        <div class="bar-row">
-          <span class="bar-label">💤睡眠</span>
-          <div class="bar-bg"><div id="bar-sleep" class="bar-fill" style="width:100%;"></div></div>
+        <div class="stat-row">
+          <span class="pixel-icon">💤</span>
+          <div class="bar-track"><div id="bar-sleep" class="bar-fill bar-sleep"></div></div>
         </div>
       </section>
 
+      <!-- ========================= 操作按鈕 ========================= -->
       <footer id="action-bar">
-        <button class="action-btn" data-action="feed"><span>🌾</span>餵食</button>
-        <button class="action-btn" data-action="water"><span>💧</span>飲水</button>
-        <button class="action-btn" data-action="play"><span>🧸</span>玩耍</button>
-        <button class="action-btn" data-action="bath"><span>🛀</span>洗澡</button>
-        <button class="action-btn" data-action="sleep"><span>🛌</span>睡覺</button>
-        <button class="action-btn" data-action="doctor"><span>💊</span>看病</button>
-        <button class="action-btn" data-action="clean"><span>💩</span>清屎</button>
-        <button class="action-btn" data-action="work"><span>💼</span>工作</button>
-        <button class="action-btn" data-action="daily"><span>🎁</span>獎勵</button>
-        <button class="action-btn full-w" data-action="shop">🏪 商店 / 背包</button>
+        <button class="action-btn" data-action="feed"><span>🍗</span>餵食</button>
+        <button class="action-btn" data-action="water"><span>💧</span>喝水</button>
+        <button class="action-btn" data-action="play"><span>🎮</span>玩耍</button>
+        <button class="action-btn" data-action="bath"><span>🛁</span>洗澡</button>
+        <button class="action-btn" data-action="sleep"><span>😴</span>睡覺</button>
+        <button class="action-btn" data-action="doctor"><span>💊</span>看醫生</button>
+        <button class="action-btn" data-action="clean"><span>🧹</span>清便便</button>
+        <button class="action-btn" data-action="daily"><span>🎁</span>每日獎勵</button>
+        <button class="action-btn" data-action="work"><span>💼</span>工作賺錢</button>
+        <button class="action-btn" data-action="shop"><span>📦</span>商店</button>
+        <button class="action-btn" data-action="settings"><span>⚙️</span>設定</button>
       </footer>
 
     </div>
   </div>
 
+  <!-- ============================================================
+       商店視窗
+  ============================================================= -->
   <div id="shop-modal" class="modal hidden">
     <div class="modal-box pixel-panel">
       <div class="modal-header">
-        <span class="pixel-title">🏪 商店與背包</span>
+        <span class="pixel-title">📦 商店</span>
         <button class="close-btn" data-close="shop-modal">X</button>
       </div>
-      <div class="shop-tabs">
+      <div class="modal-tabs">
         <button class="tab-btn active" data-tab="food">飼料</button>
-        <button class="tab-btn" data-tab="goods">道具</button>
+        <button class="tab-btn" data-tab="goods">用品</button>
         <button class="tab-btn" data-tab="wear">裝扮</button>
-        <button class="tab-btn" data-tab="bg">場景</button>
+        <button class="tab-btn" data-tab="bg">背景</button>
       </div>
-      <div class="modal-body" id="shop-list"></div>
+      <div id="shop-list" class="modal-body"></div>
     </div>
   </div>
 
+  <!-- ============================================================
+       設定視窗
+  ============================================================= -->
   <div id="settings-modal" class="modal hidden">
     <div class="modal-box pixel-panel">
       <div class="modal-header">
@@ -123,11 +134,14 @@
           <input id="sfx-toggle" type="checkbox" checked />
         </label>
         <button id="save-btn" class="action-btn small">💾 立即儲存</button>
-        <button id="reset-btn" class="action-btn small danger">🗑️ 重新開始</button>
+        <button id="reset-btn" class="action-btn small danger">🗑️ 重新開始（清除存檔）</button>
       </div>
     </div>
   </div>
 
+  <!-- ============================================================
+       死亡 / 重生視窗
+  ============================================================= -->
   <div id="death-modal" class="modal hidden">
     <div class="modal-box pixel-panel">
       <div class="modal-header">
@@ -141,5 +155,11 @@
     </div>
   </div>
 
+  <!-- ============================================================
+       事件 Toast
+  ============================================================= -->
+  <div id="toast" class="hidden pixel-panel"></div>
+
+  <script src="script.js"></script>
 </body>
 </html>
