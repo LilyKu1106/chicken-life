@@ -53,9 +53,9 @@ const STAGES = [
   { key:'old',   label:'老雞',   minAge:15, scale:1.05 },
 ];
 
-const DAY_LENGTH_MS = 60 * 1000;     // 遊戲內：現實 60 秒 = 1 天（方便展示成長系統）
+const DAY_LENGTH_MS = 10 * 60 * 1000;     // 遊戲內：現實 60 秒 = 1 天（方便展示成長系統）
 const TICK_MS = 1000;                 // 數值每秒自然變化一次
-const DECAY = { hunger:0.45, happy:0.35, energy:0.30, clean:0.30, sleep:0.0 };
+const DECAY = { hunger:0.22, happy:0.17, energy:0.15, clean:0.15, sleep:0.0 };
 const SAVE_KEY = 'chickenLife_save_v1';
 let mainTickInterval = null; // 主數值衰減計時器的參照，死亡時會被清除
 
