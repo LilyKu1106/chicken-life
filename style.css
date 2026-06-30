@@ -35,41 +35,50 @@
 *{ box-sizing:border-box; }
 
 html,body{
-  margin:0; padding:0; height:100%;
+  margin:0; padding:0;
+  width:100%; height:100%;
   background: var(--c-brown-dark);
   font-family: var(--font-pixel);
   color: var(--c-ink);
   image-rendering: pixelated;
   -webkit-font-smoothing: none;
-  overflow:hidden;
+  overflow:hidden;            /* 絕對不允許捲軸 */
+  overscroll-behavior: none;
   user-select:none;
 }
 
 button, input{ font-family: var(--font-pixel); }
 
 /* ============================================================
-   外框：固定 16:9 比例，置中、可縮放
+   外框：以「真實視窗高度」為基準計算，不再用寬度反推 16:9。
+   在手機直向螢幕下，16:9（橫向比例）會把容器壓得極矮，導致
+   下方面板被擠出畫面——這正是先前版本會裁切按鈕的根本原因。
+   改為：容器永遠不超過視窗的寬與高（各自獨立用 vw / dvh 限制），
+   並用 max-width 讓桌機/平板上維持精巧的直式遊戲機外觀。
    ============================================================ */
 #game-wrapper{
-  width:100%; height:100%;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;        /* 後面用 dvh 覆寫，dvh 不支援的瀏覽器會 fallback 用這行 */
+  height: 100dvh;        /* 動態視窗高度：會自動扣掉手機網址列/工具列佔用的空間 */
   display:flex; align-items:center; justify-content:center;
   background:
     repeating-linear-gradient(45deg, #4a3322 0 8px, #432e1d 8px 16px);
+  overflow:hidden;
 }
 
 #game-stage{
-  /* 同時受「視窗寬度」與「視窗高度」雙重限制：
-     calc(92vh * 16/9) 確保即使在很矮的手機畫面（含瀏覽器上下工具列擠壓）下，
-     算出來的寬度也不會讓高度超過 92vh，整個容器永遠完整顯示在可視範圍內。 */
-  width: min(96vw, 960px, calc(92vh * 16 / 9));
-  max-height: 92vh;
-  aspect-ratio: 16/9;
+  /* 寬、高分別獨立受視窗限制，絕不會互相推算出超出畫面的尺寸。 */
+  width: min(94vw, 480px);
+  height: min(94vh, 860px);
+  height: min(94dvh, 860px);
   background: var(--c-cream);
   border: 4px solid var(--c-ink);
   box-shadow: 0 0 0 4px var(--c-cream-2), 8px 8px 0 rgba(0,0,0,.35);
   display:flex; flex-direction:column;
   position:relative;
-  overflow:hidden;
+  overflow:hidden;        /* 任何狀況下都不允許子元素溢出外框 */
 }
 
 /* ============================================================
@@ -100,20 +109,11 @@ button, input{ font-family: var(--font-pixel); }
   display:flex; align-items:center; justify-content:space-between;
   padding: 6px 10px;
   margin: 4px;
-  flex: 0 1 auto;
+  flex: 0 1 auto;     /* 正常情況下用內容自然高度，極端窄高比時允許縮小，但絕不會撐破外框 */
   min-height: 0;
 }
 .top-left, .top-mid, .top-right{
   display:flex; align-items:center; gap:6px;
-}
-.avatar-canvas{
-  width:40px; height:22.5px; /* 維持 16:9，與主畫布同座標系，只是顯示縮小 */
-  border:2px solid var(--c-ink);
-  background: var(--c-cream);
-  image-rendering: pixelated;
-  image-rendering: -moz-crisp-edges;
-  image-rendering: crisp-edges;
-  flex-shrink:0;
 }
 
 /* ============================================================
@@ -121,7 +121,11 @@ button, input{ font-family: var(--font-pixel); }
    ============================================================ */
 #scene{
   position:relative;
-  flex: 1 1 auto;
+  /* flex: 1 1 0 是讓「小雞主畫面」自動吃掉所有其他面板（Header/狀態列/按鈕列）
+     用完之後「剩下的全部空間」的標準寫法——這正是把小雞放大、置中、
+     成為整個畫面視覺焦點的關鍵：其他面板只取自己需要的高度，
+     scene 永遠拿走剩餘的最大區塊。 */
+  flex: 1 1 0;
   min-height: 0;   /* 關鍵修正：預設 flex item 的 min-height 是 auto，
                        對 <canvas> 這種「可替換元素」會用其內在尺寸(320x180)
                        當作不可壓縮的下限，導致矮螢幕下整個 #scene 無法縮小，
@@ -131,6 +135,7 @@ button, input{ font-family: var(--font-pixel); }
   border: 3px solid var(--c-ink);
   overflow:hidden;
   background:#000;
+  display:flex; align-items:center; justify-content:center;
 }
 #bg-canvas, #chick-canvas{
   position:absolute; top:0; left:0;
@@ -339,17 +344,6 @@ button, input{ font-family: var(--font-pixel); }
 }
 
 @media (max-width: 420px){
-  #game-stage{ width:99vw; }
   #action-bar{ grid-template-columns: repeat(3, 1fr); }
   .bg-btn{ width:18px; height:18px; font-size:9px; }
-}
-
-@media (orientation: portrait) and (max-height: 700px){
-  /* 直向手機（含瀏覽器上下工具列擠壓可視高度的情況）：再保守一點，
-     用 85vh 而非 92vh 來反推寬度，預留更多安全邊界給工具列。
-     寬高比永遠維持 16:9，不會被拉伸變形。 */
-  #game-stage{
-    width: min(96vw, calc(85vh * 16 / 9));
-    max-height: 85vh;
-  }
 }

@@ -171,11 +171,6 @@ function fitCanvas(canvas){
 fitCanvas(chickCanvas);
 fitCanvas(document.getElementById('bg-canvas'));
 
-const avatarCanvas = document.getElementById('top-avatar-canvas');
-const avatarCtx = avatarCanvas.getContext('2d');
-avatarCtx.imageSmoothingEnabled = false;
-fitCanvas(avatarCanvas); // 與主畫布共用同一份座標系（320x180），CSS 再縮小顯示即可
-
 /**
  * 畫出小雞本體。state 決定表情/動作，frame 用來做幀間變化，stageScale 控制體型大小。
  * outfit: { hat, glasses, scarf, clothes, wings } 任一為 true 表示穿戴中。
@@ -241,7 +236,7 @@ function drawChick(ctx, { state, frame, stageScale, outfit, sick }){
 
   const cx = baseX;
   const cy = baseY + offsetY;
-  const r = 34 * stageScale;
+  const r = 40 * stageScale; // 放大基礎體型，讓小雞看起來更肥嘟嘟、更有存在感
 
   ctx.save();
   ctx.translate(cx, cy);
@@ -878,9 +873,6 @@ const UI = {
           sick: GameState.health < 20,
         };
         drawChick(chickCtx, params);
-        // 頂部小頭像：同一份座標系（320x180），直接重用同一個繪製函式，
-        // 即時同步顯示目前的成長階段與裝扮，CSS 再把畫布顯示縮小即可。
-        drawChick(avatarCtx, { ...params, stageScale: params.stageScale * 0.85 });
       }
     });
     animManager.start();
