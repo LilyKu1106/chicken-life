@@ -1,0 +1,335 @@
+/* ============================================================
+   Chicken Life - style.css
+   像素風（Pixel Art）日系療癒養成遊戲樣式表
+   色彩採低彩度 Pixel Palette，全程不使用漸層 / 模糊 / 抗鋸齒
+   ============================================================ */
+
+:root{
+  /* ---- Pixel Palette（16 色為主） ---- */
+  --c-cream:      #fff3d6;
+  --c-cream-2:    #ffe9b8;
+  --c-green:      #b6e3a1;
+  --c-green-dark: #6fae5a;
+  --c-brown:      #8a5a3b;
+  --c-brown-dark: #5c3b26;
+  --c-ink:        #2b2017;
+  --c-white:      #ffffff;
+  --c-yellow:     #ffd23f;
+  --c-yellow-2:   #ffb000;
+  --c-pink:       #ff9fb2;
+  --c-red:        #e8584a;
+  --c-blue:       #6fc3df;
+  --c-purple:     #b08bdb;
+  --c-gray:       #9c8f7c;
+
+  --bar-health: #e8584a;
+  --bar-hunger: #ffb000;
+  --bar-happy:  #ffd23f;
+  --bar-energy: #6fc3df;
+  --bar-clean:  #6fae5a;
+  --bar-sleep:  #b08bdb;
+
+  --font-pixel: 'Press Start 2P', 'Silkscreen', monospace;
+}
+
+*{ box-sizing:border-box; }
+
+html,body{
+  margin:0; padding:0; height:100%;
+  background: var(--c-brown-dark);
+  font-family: var(--font-pixel);
+  color: var(--c-ink);
+  image-rendering: pixelated;
+  -webkit-font-smoothing: none;
+  overflow:hidden;
+  user-select:none;
+}
+
+button, input{ font-family: var(--font-pixel); }
+
+/* ============================================================
+   外框：固定 16:9 比例，置中、可縮放
+   ============================================================ */
+#game-wrapper{
+  width:100%; height:100%;
+  display:flex; align-items:center; justify-content:center;
+  background:
+    repeating-linear-gradient(45deg, #4a3322 0 8px, #432e1d 8px 16px);
+}
+
+#game-stage{
+  width:min(96vw, 960px);
+  aspect-ratio: 16/9;
+  background: var(--c-cream);
+  border: 4px solid var(--c-ink);
+  box-shadow: 0 0 0 4px var(--c-cream-2), 8px 8px 0 rgba(0,0,0,.35);
+  display:flex; flex-direction:column;
+  position:relative;
+  overflow:hidden;
+}
+
+/* ============================================================
+   Pixel Panel：所有面板共用的「九宮格」邊框風格
+   （以純色實框模擬 9-slice 面板，不使用陰影模糊）
+   ============================================================ */
+.pixel-panel{
+  background: var(--c-cream-2);
+  border: 3px solid var(--c-ink);
+  box-shadow: inset 0 0 0 2px var(--c-white);
+  border-radius: 2px;
+}
+
+.pixel-title{
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+.pixel-sub{
+  font-size: 8px;
+  letter-spacing: 1px;
+}
+.pixel-icon{ font-size: 12px; line-height:1; }
+
+/* ============================================================
+   頂部資訊列
+   ============================================================ */
+#top-bar{
+  display:flex; align-items:center; justify-content:space-between;
+  padding: 6px 10px;
+  margin: 4px;
+  flex: 0 0 auto;
+}
+.top-left, .top-mid, .top-right{
+  display:flex; align-items:center; gap:6px;
+}
+
+/* ============================================================
+   主場景
+   ============================================================ */
+#scene{
+  position:relative;
+  flex: 1 1 auto;
+  margin: 0 4px;
+  border: 3px solid var(--c-ink);
+  overflow:hidden;
+  background:#000;
+}
+#bg-canvas, #chick-canvas{
+  position:absolute; top:0; left:0;
+  width:100%; height:100%;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+#chick-canvas{ cursor:pointer; }
+
+#poop-layer{
+  position:absolute; inset:0; pointer-events:none;
+}
+.poop-pixel{
+  position:absolute; font-size:18px; filter:none;
+  animation: pop-in .15s steps(2) both;
+}
+
+#bubble{
+  position:absolute; top:8px; left:50%; transform:translateX(-50%);
+  padding:4px 8px; font-size:14px; z-index:5;
+}
+
+#bg-switcher{
+  position:absolute; top:6px; right:6px;
+  display:flex; flex-direction:column; gap:3px; z-index:4;
+}
+.bg-btn{
+  width:22px; height:22px; font-size:11px;
+  background: var(--c-cream-2);
+  border:2px solid var(--c-ink);
+  cursor:pointer;
+}
+.bg-btn:hover{ background:var(--c-yellow); }
+.bg-btn:active{ transform: translate(1px,1px); }
+
+/* ============================================================
+   狀態列（Progress Bars）
+   ============================================================ */
+#stat-bars{
+  margin: 4px;
+  padding: 6px 10px;
+  display:grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px 14px;
+  flex: 0 0 auto;
+}
+.stat-row{ display:flex; align-items:center; gap:6px; }
+.bar-track{
+  flex:1; height:10px;
+  background: var(--c-ink);
+  border:2px solid var(--c-ink);
+  box-shadow: inset 0 0 0 1px var(--c-white);
+  position:relative;
+}
+.bar-fill{
+  height:100%; width:100%;
+  transition: width .25s steps(8);
+  image-rendering: pixelated;
+  background-image: repeating-linear-gradient(90deg, rgba(255,255,255,.25) 0 2px, transparent 2px 4px);
+}
+.bar-health{ background-color: var(--bar-health); }
+.bar-hunger{ background-color: var(--bar-hunger); }
+.bar-happy { background-color: var(--bar-happy); }
+.bar-energy{ background-color: var(--bar-energy); }
+.bar-clean { background-color: var(--bar-clean); }
+.bar-sleep { background-color: var(--bar-sleep); }
+
+.bar-fill.low{ animation: blink 1s steps(2) infinite; }
+
+/* ============================================================
+   底部動作按鈕列
+   ============================================================ */
+#action-bar{
+  flex: 0 0 auto;
+  margin: 4px;
+  padding: 6px;
+  display:grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+  background: var(--c-cream-2);
+  border: 3px solid var(--c-ink);
+}
+
+.action-btn{
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:2px;
+  padding: 5px 2px;
+  font-size: 7px;
+  background: var(--c-green);
+  border: 2px solid var(--c-ink);
+  box-shadow: inset 0 0 0 1px var(--c-white), 2px 2px 0 var(--c-ink);
+  cursor:pointer;
+  color: var(--c-ink);
+  transition: transform .05s linear;
+}
+.action-btn span{ font-size:14px; }
+.action-btn:hover{ background: var(--c-yellow); }
+.action-btn:active{
+  transform: translate(2px,2px);
+  box-shadow: none;
+}
+.action-btn.small{ font-size:8px; padding:8px; grid-column: span 3; }
+.action-btn.danger{ background: var(--c-red); color:var(--c-white); }
+
+/* ============================================================
+   Modal（商店 / 設定 / 死亡）
+   ============================================================ */
+.modal{
+  position:fixed; inset:0; z-index:50;
+  background: rgba(20,14,8,.65);
+  display:flex; align-items:center; justify-content:center;
+}
+.modal.hidden{ display:none; }
+.modal-box{
+  width:min(86vw, 420px);
+  max-height:80vh;
+  display:flex; flex-direction:column;
+  background: var(--c-cream);
+}
+.modal-header{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:8px 10px;
+  background: var(--c-cream-2);
+  border-bottom:3px solid var(--c-ink);
+}
+.close-btn{
+  width:20px; height:20px;
+  background: var(--c-red); color:var(--c-white);
+  border:2px solid var(--c-ink); cursor:pointer; font-size:9px;
+}
+.modal-body{
+  padding:10px; overflow-y:auto; font-size:9px; line-height:1.8;
+}
+.modal-tabs{ display:flex; border-bottom:3px solid var(--c-ink); }
+.tab-btn{
+  flex:1; padding:6px 2px; font-size:8px;
+  background: var(--c-cream); border:none; border-right:2px solid var(--c-ink);
+  cursor:pointer;
+}
+.tab-btn.active{ background: var(--c-yellow); }
+
+.shop-item{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:6px; margin-bottom:6px;
+  background: var(--c-cream-2);
+  border:2px solid var(--c-ink);
+}
+.shop-item-info{ display:flex; align-items:center; gap:8px; }
+.shop-item button{
+  font-size:7px; padding:5px 6px;
+  background: var(--c-green); border:2px solid var(--c-ink); cursor:pointer;
+}
+.shop-item button:disabled{ background: var(--c-gray); cursor:not-allowed; }
+
+.setting-row{
+  display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:10px; font-size:9px;
+}
+.setting-row input[type="text"]{
+  width:120px; padding:4px; border:2px solid var(--c-ink); background:var(--c-white);
+  font-size:9px;
+}
+
+/* ============================================================
+   Toast 提示（隨機事件 / 升級等）
+   ============================================================ */
+#toast{
+  position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
+  padding:8px 14px; font-size:9px; z-index:60;
+  background: var(--c-yellow); white-space:nowrap;
+}
+#toast.hidden{ display:none; }
+
+/* ============================================================
+   動畫 Keyframes
+   ============================================================ */
+@keyframes pop-in{
+  from{ transform: scale(.4); opacity:0; }
+  to{ transform: scale(1); opacity:1; }
+}
+@keyframes blink{
+  50%{ opacity:.35; }
+}
+@keyframes toast-in{
+  from{ transform: translate(-50%, 12px); opacity:0; }
+  to{ transform: translate(-50%, 0); opacity:1; }
+}
+#toast.show{ animation: toast-in .15s steps(4) both; }
+
+.hidden{ display:none !important; }
+
+/* ============================================================
+   RWD：平板 / 手機
+   ============================================================ */
+@media (max-width: 720px){
+  .pixel-title{ font-size:8px; }
+  .pixel-sub{ font-size:7px; }
+  #stat-bars{ grid-template-columns: repeat(2, 1fr); }
+  #action-bar{ grid-template-columns: repeat(4, 1fr); }
+  .action-btn{ font-size:6px; }
+  .action-btn span{ font-size:12px; }
+}
+
+@media (max-width: 420px){
+  #game-stage{ width:99vw; }
+  #action-bar{ grid-template-columns: repeat(3, 1fr); }
+  .bg-btn{ width:18px; height:18px; font-size:9px; }
+}
+
+@media (orientation: portrait) and (max-height: 700px){
+  /* 直向手機：絕不可改變 #game-stage 的寬高比（內部 canvas 固定以 16:9 繪製），
+     否則畫面會被拉伸變形。改成由「可用高度」反推寬度，並用 min() 確保算出來
+     的寬度仍不超過螢幕寬度，整個 stage 等比縮小、置中，比例永遠是 16:9。 */
+  #game-stage{
+    width: auto;
+    height: min(80vh, calc(96vw * 9 / 16));
+    max-width: 96vw;
+    aspect-ratio: 16/9;
+  }
+}
