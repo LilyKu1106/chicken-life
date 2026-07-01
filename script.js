@@ -53,11 +53,14 @@ const STAGES = [
   { key:'old',   label:'老雞',   minAge:15, scale:1.05 },
 ];
 
-const DAY_LENGTH_MS = 10 * 60 * 1000;     // 遊戲內：現實 60 秒 = 1 天（方便展示成長系統）
+const DAY_LENGTH_MS = 60 * 1000;     // 遊戲內：現實 60 秒 = 1 天（方便展示成長系統）
 const TICK_MS = 1000;                 // 數值每秒自然變化一次
-const DECAY = { hunger:0.22, happy:0.17, energy:0.15, clean:0.15, sleep:0.0 };
-const SAVE_KEY = 'chickenLife_save_v1';
+const DECAY = { hunger:0.45, happy:0.35, energy:0.30, clean:0.30, sleep:0.0 };
+const SAVE_KEY_PREFIX = 'chickenLife_slot_';   // + 1 / 2 / 3
+const SAVE_KEY_LEGACY = 'chickenLife_save_v1'; // 舊版單一存檔（用於自動搬遷）
+const SAVE_VERSION = 1;
 let mainTickInterval = null; // 主數值衰減計時器的參照，死亡時會被清除
+let currentSlot = 1;         // 目前作用中的存檔位（載入/儲存皆針對這一格）
 
 const PX = 4; // 基礎像素單位（畫面內每個「像素方塊」實際佔的螢幕像素數）
 
@@ -334,20 +337,52 @@ function drawEyes(ctx, cx, cy, ox, oy, r, mode, frame){
 }
 
 function drawOutfit(ctx, cx, cy, r, outfit){
-  if (outfit.glasses){
-    pxRect(ctx, cx - r*0.65, cy - r*0.12, r*0.45, r*0.3, 'rgba(40,40,40,.85)');
-    pxRect(ctx, cx + r*0.2, cy - r*0.12, r*0.45, r*0.3, 'rgba(40,40,40,.85)');
-    pxRect(ctx, cx - r*0.2, cy - r*0.02, r*0.4, 4, PALETTE.outline);
-  }
-  if (outfit.hat){
-    pxRect(ctx, cx - r*0.55, cy - r*1.55, r*1.1, r*0.35, '#e8584a');
-    pxRect(ctx, cx - r*0.75, cy - r*1.25, r*1.5, r*0.18, '#c2392c');
-  }
+  // ---- 服裝層（身體周圍）----
   if (outfit.scarf){
     pxRect(ctx, cx - r*0.6, cy + r*0.55, r*1.2, r*0.3, '#6fc3df');
   }
   if (outfit.clothes){
     pxRect(ctx, cx - r*0.65, cy + r*0.3, r*1.3, r*0.55, '#b08bdb');
+  }
+  if (outfit.tie){
+    pxRect(ctx, cx - 3, cy + r*0.5, 6, r*0.5, '#c2392c');
+    pxRect(ctx, cx - 6, cy + r*0.42, 12, 8, '#e8584a');
+  }
+
+  // ---- 配件層（背包 / 蝴蝶結 / 耳機）----
+  if (outfit.backpack){
+    pxRect(ctx, cx + r*0.55, cy + r*0.1, r*0.4, r*0.55, '#8a5a3b');
+    pxRect(ctx, cx + r*0.6, cy + r*0.05, r*0.28, r*0.14, '#c2392c');
+  }
+  if (outfit.bowtie){
+    pxRect(ctx, cx - 10, cy + r*0.45, 8, 8, '#ff9fb2');
+    pxRect(ctx, cx + 2, cy + r*0.45, 8, 8, '#ff9fb2');
+    pxRect(ctx, cx - 2, cy + r*0.45 + 2, 4, 4, '#e8584a');
+  }
+  if (outfit.headphones){
+    pxRect(ctx, cx - r*0.85, cy - r*0.15, 8, r*0.5, '#2b2017');
+    pxRect(ctx, cx + r*0.85 - 8, cy - r*0.15, 8, r*0.5, '#2b2017');
+    pxRect(ctx, cx - r*0.85, cy - r*0.55, r*1.7, 8, '#2b2017');
+  }
+
+  // ---- 眼鏡層 ----
+  if (outfit.glasses){
+    pxRect(ctx, cx - r*0.65, cy - r*0.12, r*0.45, r*0.3, 'rgba(40,40,40,.85)');
+    pxRect(ctx, cx + r*0.2, cy - r*0.12, r*0.45, r*0.3, 'rgba(40,40,40,.85)');
+    pxRect(ctx, cx - r*0.2, cy - r*0.02, r*0.4, 4, PALETTE.outline);
+  }
+
+  // ---- 帽子層（最上層）----
+  if (outfit.hat){
+    pxRect(ctx, cx - r*0.55, cy - r*1.55, r*1.1, r*0.35, '#e8584a');
+    pxRect(ctx, cx - r*0.75, cy - r*1.25, r*1.5, r*0.18, '#c2392c');
+  }
+  if (outfit.crown){
+    pxRect(ctx, cx - r*0.5, cy - r*1.45, r*1.0, r*0.28, '#ffd23f');
+    px(ctx, cx - r*0.4, cy - r*1.6, '#ffd23f');
+    px(ctx, cx,          cy - r*1.68, '#ffd23f');
+    px(ctx, cx + r*0.4, cy - r*1.6, '#ffd23f');
+    px(ctx, cx, cy - r*1.5, '#ff9fb2');
   }
 }
 
@@ -463,6 +498,106 @@ function drawBackground(key){
 }
 
 /* ============================================================================
+   5b. WeatherSystem
+   ----------------------------------------------------------------------------
+   天氣是獨立於「場景背景」的另一條軸線：場景（room/farm/forest...）是玩家自己
+   切換的地點，天氣（sunny/rain/night/snow/storm）則由排程器每 3 分鐘現實時間
+   自動輪替，影響數值衰減速度與生病機率，並在 #weather-canvas 疊加對應的
+   像素粒子特效（雨滴/雪花/暴風雨的變暗+閃電/夜晚的星空濾鏡）。
+   ============================================================================ */
+const WEATHER_TYPES = {
+  sunny: { icon:'☀️', label:'晴天',
+    decay:{ hunger:1.0, happy:1.0, energy:1.0, clean:1.0 }, sickChance:1.0 },
+  rain:  { icon:'🌧️', label:'雨天',
+    decay:{ hunger:1.0, happy:0.9, energy:1.0, clean:1.4 }, sickChance:1.3 },
+  night: { icon:'🌙', label:'夜晚',
+    decay:{ hunger:0.9, happy:1.0, energy:1.2, clean:1.0 }, sickChance:1.0 },
+  snow:  { icon:'❄️', label:'雪天',
+    decay:{ hunger:1.1, happy:1.0, energy:1.1, clean:1.0 }, sickChance:1.2 },
+  storm: { icon:'⛈️', label:'暴風雨',
+    decay:{ hunger:1.0, happy:1.0, energy:2.0, clean:2.0 }, sickChance:3.0 },
+};
+const WEATHER_CYCLE_MS = 3 * 60 * 1000; // 每 3 分鐘現實時間切換一次
+
+const weatherCanvas = document.getElementById('weather-canvas');
+const weatherCtx = weatherCanvas.getContext('2d');
+weatherCtx.imageSmoothingEnabled = false;
+fitCanvas(weatherCanvas);
+
+// 預先產生固定的粒子種子（位置/速度/長度），每幀只依時間推算位置，避免每幀重新亂數造成閃爍
+const rainParticles = Array.from({length:44}, () => ({
+  x: rand(0,320), y: rand(0,180), speed: rand(220,340), len: rand(8,16),
+}));
+const snowParticles = Array.from({length:34}, () => ({
+  x: rand(0,320), y: rand(0,180), speed: rand(24,50), drift: rand(0.5,1.5), phase: rand(0,Math.PI*2),
+}));
+let lastLightning = 0;
+
+function drawWeather(t){
+  const W = weatherCanvas.width, H = weatherCanvas.height;
+  weatherCtx.clearRect(0,0,W,H);
+  const w = GameState.weather;
+
+  if (w === 'rain' || w === 'storm'){
+    weatherCtx.strokeStyle = 'rgba(180,220,255,0.55)';
+    weatherCtx.lineWidth = 2;
+    rainParticles.forEach(p => {
+      const y = (p.y + (t/1000)*p.speed) % (H+20) - 20;
+      weatherCtx.beginPath();
+      weatherCtx.moveTo(p.x, y);
+      weatherCtx.lineTo(p.x - 3, y + p.len);
+      weatherCtx.stroke();
+    });
+  }
+
+  if (w === 'snow'){
+    snowParticles.forEach(p => {
+      const y = (p.y + (t/1000)*p.speed) % (H+10) - 10;
+      const x = p.x + Math.sin(t/600 + p.phase) * 10 * p.drift;
+      px(weatherCtx, x, y, 'rgba(255,255,255,0.9)');
+    });
+  }
+
+  if (w === 'storm'){
+    // 暴風雨整體變暗
+    pxRect(weatherCtx, 0, 0, W, H, 'rgba(10,10,30,0.35)');
+    // 偶發閃電：短暫全螢幕泛白
+    if (t - lastLightning > randInt(2500, 6000)){
+      lastLightning = t;
+    }
+    if (t - lastLightning < 90){
+      pxRect(weatherCtx, 0, 0, W, H, 'rgba(255,255,255,0.5)');
+    }
+  }
+
+  if (w === 'night'){
+    pxRect(weatherCtx, 0, 0, W, H, 'rgba(10,15,40,0.3)');
+    for (let i=0;i<16;i++){
+      const sx = (i*53) % W, sy = (i*31) % (H*0.5);
+      if (Math.sin(t/400 + i) > 0.3) px(weatherCtx, sx, sy, 'rgba(255,255,255,0.8)');
+    }
+  }
+  // sunny：不畫任何濾鏡，維持晴朗清澈
+}
+
+/** 隨機挑一個跟目前不同的天氣，套用並記錄日記 */
+function changeWeather(){
+  const keys = Object.keys(WEATHER_TYPES).filter(k => k !== GameState.weather);
+  GameState.weather = choice(keys);
+  const info = WEATHER_TYPES[GameState.weather];
+  UI.toast(`${info.icon} 天氣變成了「${info.label}」`);
+  GameState.addDiary('weather', '天氣變化', `天空轉為${info.label}，環境對小雞的狀態產生了影響。`);
+  UI.updateStats();
+}
+
+function scheduleWeather(){
+  setTimeout(() => {
+    if (GameState.alive) changeWeather();
+    scheduleWeather();
+  }, WEATHER_CYCLE_MS);
+}
+
+/* ============================================================================
    6. SoundManager — 8-bit 音效合成（不需任何音檔）
    ============================================================================ */
 const SoundManager = (() => {
@@ -507,9 +642,14 @@ const GameState = {
   isSleeping: false,
   stage: 'baby',
   background: 'room',
-  outfit: { hat:false, glasses:false, scarf:false, clothes:false, wings:false },
+  weather: 'sunny',               // 目前天氣：sunny / rain / night / snow / storm
+  isDirty: false,                 // 是否有尚未手動存檔的變更
+  diary: [],                      // 日記條目陣列，上限 500 筆
+  outfit: { hat:false, glasses:false, scarf:false, clothes:false, wings:false,
+             crown:false, bowtie:false, headphones:false, backpack:false, tie:false },
   inventory: { food_basic: 3, food_premium: 0, medicine: 0, soap: 0, toy: 0 },
-  ownedWear: { hat:false, glasses:false, scarf:false, clothes:false },
+  ownedWear: { hat:false, glasses:false, scarf:false, clothes:false,
+               crown:false, bowtie:false, headphones:false, backpack:false, tie:false },
   lastLoginDate: null,
   settings: { sfx: true },
   createdAt: Date.now(),
@@ -533,25 +673,57 @@ const GameState = {
       UI.toast(`🎉 升級了！目前 Lv.${this.level}`);
       SoundManager.levelup();
       UI.playOneShot('levelup', 1600);
+      this.addDiary('levelup', '升級了！', `小雞升上了 Lv.${this.level}，感覺更成熟了一些。`);
     }
   },
 
   addGold(n){ this.gold = Math.max(0, this.gold + n); },
 
+  /** 標記「有未存檔的變更」。除了遊戲內顯性事件（升級、獲得道具等）之外，
+      也在此統一設置，右上角會顯示閃爍的 ⚠️ UNSAVED 提示，直到玩家手動存檔。 */
+  markDirty(){
+    this.isDirty = true;
+  },
+
+  /** 新增一筆日記。結構：{ id, timestamp, gameDay, type, title, description }。
+      陣列長度嚴格上限 500 筆，超過時剔除最舊的一筆，避免 LocalStorage 爆量。 */
+  addDiary(type, title, description){
+    this.diary.push({
+      id: 'd' + Date.now() + Math.floor(Math.random()*1000),
+      timestamp: Date.now(),
+      gameDay: Math.floor(this.ageDays()),
+      type, title, description,
+    });
+    if (this.diary.length > 500) this.diary.shift();
+    this.markDirty();
+  },
+
   tick(){
     if (!this.alive) return;
     this.ageMs += TICK_MS;
 
+    const wx = WEATHER_TYPES[this.weather].decay;
+
     if (!this.isSleeping){
-      this.hunger = clamp(this.hunger - DECAY.hunger);
-      this.happy  = clamp(this.happy  - DECAY.happy);
-      this.energy = clamp(this.energy - DECAY.energy);
-      this.clean  = clamp(this.clean  - DECAY.clean);
+      this.hunger = clamp(this.hunger - DECAY.hunger * wx.hunger);
+      this.happy  = clamp(this.happy  - DECAY.happy  * wx.happy);
+      this.energy = clamp(this.energy - DECAY.energy * wx.energy);
+      this.clean  = clamp(this.clean  - DECAY.clean  * wx.clean);
       this.sleepStat = clamp(this.sleepStat - 0.25);
     } else {
       this.sleepStat = clamp(this.sleepStat + 4);
       this.energy = clamp(this.energy + 3);
       if (this.sleepStat >= 100) this.wake();
+    }
+
+    // 天氣造成的額外生病機率（暴風雨 sickChance 為晴天的 3 倍）
+    const sickChance = WEATHER_TYPES[this.weather].sickChance;
+    if (!this.isSleeping && Math.random() < 0.004 * sickChance){
+      const dmg = randInt(5, 15);
+      this.health = clamp(this.health - dmg);
+      const label = WEATHER_TYPES[this.weather].label;
+      UI.toast(`🤒 因為${label}的關係，小雞著涼了...`);
+      this.addDiary('sick', '著涼了', `受到${label}影響，小雞著涼了，健康下降 ${dmg} 點。`);
     }
 
     // 健康會被其他數值過低拖累，狀態良好則緩慢回復
@@ -578,6 +750,7 @@ const GameState = {
     if (s.key !== this.stage){
       this.stage = s.key;
       UI.toast(`✨ 小雞長大了！現在是「${s.label}」`);
+      this.addDiary('growth', '長大了！', `小雞成長到了新的階段：${s.label}。`);
     }
   },
 
@@ -604,6 +777,7 @@ const GameState = {
         clearInterval(mainTickInterval);
         mainTickInterval = null;
       }
+      this.addDiary('death', '小雞去了天堂', `在第 ${Math.floor(this.ageDays())} 天，健康耗盡，小雞安詳地離開了。`);
       UI.showDeath();
     }
   },
@@ -706,6 +880,7 @@ const GameState = {
     this.addExp(4);
     SoundManager.coin();
     UI.toast(`💼 工作完成，獲得 ${earn} 金幣！`);
+    this.addDiary('work', '工作賺錢', `努力工作了一下，賺到了 ${earn} 金幣。`);
   },
 
   dailyReward(){
@@ -720,6 +895,7 @@ const GameState = {
     SoundManager.coin();
     UI.toast('🎁 每日登入獎勵：+100 金幣、特殊飼料 x1！');
     UI.playOneShot('levelup', 1500);
+    this.addDiary('daily', '每日登入獎勵', '今天第一次上線，領到了 100 金幣和特殊飼料。');
   },
 
   restart(){
@@ -727,21 +903,22 @@ const GameState = {
     Object.assign(this, {
       name:'CHICK', alive:true, level:1, exp:0, gold:50, ageMs:0, weight:50,
       hunger:80, happy:80, health:100, energy:80, clean:80, sleepStat:80,
-      isSleeping:false, stage:'baby', background:'room',
-      outfit:{hat:false,glasses:false,scarf:false,clothes:false,wings:false},
+      isSleeping:false, stage:'baby', background:'room', weather:'sunny',
+      outfit:{hat:false,glasses:false,scarf:false,clothes:false,wings:false,
+               crown:false,bowtie:false,headphones:false,backpack:false,tie:false},
       inventory:{food_basic:3, food_premium:0, medicine:0, soap:0, toy:0},
-      ownedWear:{hat:false,glasses:false,scarf:false,clothes:false},
-      poopCount:0,
+      ownedWear:{hat:false,glasses:false,scarf:false,clothes:false,
+                 crown:false,bowtie:false,headphones:false,backpack:false,tie:false},
+      poopCount:0, diary:[], isDirty:true,
     });
     UI.clearPoop();
+    drawBackground(this.background);
     if (!mainTickInterval){
       mainTickInterval = setInterval(() => {
         GameState.tick();
         UI.updateStats();
-        Save.persist();
       }, TICK_MS);
     }
-    Save.persist();
   },
 };
 
@@ -759,10 +936,15 @@ const SHOP_ITEMS = {
     { id:'toy',      name:'玩具',     icon:'🧸', price:12, desc:'玩耍效果加倍' },
   ],
   wear: [
-    { id:'hat',     name:'帽子', icon:'🎩', price:30, desc:'時尚帽子裝扮' },
-    { id:'glasses', name:'眼鏡', icon:'🕶️', price:25, desc:'酷酷的眼鏡' },
-    { id:'scarf',   name:'圍巾', icon:'🧣', price:20, desc:'溫暖圍巾' },
-    { id:'clothes', name:'服裝', icon:'👕', price:35, desc:'可愛小衣服' },
+    { id:'hat',        name:'帽子',     icon:'🎩', price:30, desc:'時尚帽子裝扮' },
+    { id:'glasses',    name:'眼鏡',     icon:'🕶️', price:25, desc:'酷酷的眼鏡' },
+    { id:'scarf',      name:'圍巾',     icon:'🧣', price:20, desc:'溫暖圍巾' },
+    { id:'clothes',    name:'服裝',     icon:'👕', price:35, desc:'可愛小衣服' },
+    { id:'crown',      name:'皇冠',     icon:'👑', price:60, desc:'尊貴皇冠，閃閃發亮' },
+    { id:'bowtie',     name:'蝴蝶結',   icon:'🎀', price:18, desc:'俏皮蝴蝶結' },
+    { id:'headphones', name:'耳機',     icon:'🎧', price:28, desc:'潮流耳機' },
+    { id:'backpack',   name:'小背包',   icon:'🎒', price:22, desc:'可愛小背包' },
+    { id:'tie',        name:'領帶',     icon:'👔', price:24, desc:'紳士領帶' },
   ],
 };
 
@@ -783,6 +965,7 @@ const Shop = {
     }
     SoundManager.coin();
     UI.toast(`✅ 購買成功：${item.name}`);
+    GameState.addDiary('shop', '購物', `買了「${item.name}」。`);
     UI.renderShop();
     UI.updateStats();
   },
@@ -808,6 +991,7 @@ function scheduleRandomEvent(){
       const ev = choice(RANDOM_EVENTS);
       ev.fn();
       UI.toast(ev.text);
+      GameState.addDiary('event', '隨機事件', ev.text.replace(/^\S+\s/, ''));
       UI.updateStats();
     }
     scheduleRandomEvent();
@@ -818,32 +1002,112 @@ function scheduleRandomEvent(){
    10. Save — LocalStorage 存讀檔
    ============================================================================ */
 const Save = {
-  persist(){
-    const data = {
+  /** 組出目前完整可序列化的存檔內容（含日記、天氣等新欄位） */
+  buildState(){
+    return {
       name: GameState.name, alive: GameState.alive, level: GameState.level,
       exp: GameState.exp, gold: GameState.gold, ageMs: GameState.ageMs,
       weight: GameState.weight, hunger: GameState.hunger, happy: GameState.happy,
       health: GameState.health, energy: GameState.energy, clean: GameState.clean,
       sleepStat: GameState.sleepStat, isSleeping: GameState.isSleeping,
-      stage: GameState.stage, background: GameState.background,
+      stage: GameState.stage, background: GameState.background, weather: GameState.weather,
       outfit: GameState.outfit, inventory: GameState.inventory,
       ownedWear: GameState.ownedWear, lastLoginDate: GameState.lastLoginDate,
       settings: GameState.settings, createdAt: GameState.createdAt,
-      poopCount: GameState.poopCount,
+      poopCount: GameState.poopCount, diary: GameState.diary,
     };
-    try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); }
-    catch(e){ console.warn('存檔失敗', e); }
   },
-  load(){
+
+  slotKey(n){ return SAVE_KEY_PREFIX + n; },
+
+  hasSlot(n){
+    try { return !!localStorage.getItem(this.slotKey(n)); }
+    catch(e){ return false; }
+  },
+
+  /** 只讀取 metadata（不套用到遊戲），用於在存檔列表顯示摘要 */
+  readMeta(n){
     try {
-      const raw = localStorage.getItem(SAVE_KEY);
-      if (!raw) return false;
+      const raw = localStorage.getItem(this.slotKey(n));
+      if (!raw) return null;
       const data = JSON.parse(raw);
-      Object.assign(GameState, data);
-      return true;
-    } catch(e){ console.warn('讀檔失敗', e); return false; }
+      return data.metadata || null;
+    } catch(e){ return null; }
   },
-  clear(){ localStorage.removeItem(SAVE_KEY); },
+
+  /** 實際寫入 LocalStorage。若目標格已有資料，呼叫端必須先跳二次確認彈窗。 */
+  saveToSlot(n){
+    const payload = {
+      version: SAVE_VERSION,
+      metadata: {
+        name: GameState.name,
+        level: GameState.level,
+        ageDays: Math.floor(GameState.ageDays()),
+        savedAt: Date.now(),
+      },
+      state: this.buildState(),
+    };
+    try {
+      localStorage.setItem(this.slotKey(n), JSON.stringify(payload));
+      GameState.isDirty = false;
+      currentSlot = n;
+      UI.toast(`💾 已存檔到 Slot ${n}`);
+      UI.updateStats();
+      UI.renderSaveSlots();
+    } catch(e){
+      console.warn('存檔失敗', e);
+      UI.toast('❌ 存檔失敗（LocalStorage 可能已滿）');
+    }
+  },
+
+  /** 讀取指定存檔位並套用到目前的 GameState。含最基本的 Schema Version 相容判斷。 */
+  loadFromSlot(n){
+    try {
+      const raw = localStorage.getItem(this.slotKey(n));
+      if (!raw){ UI.toast('❌ 這個存檔位是空的'); return false; }
+      const data = JSON.parse(raw);
+      if (data.version !== SAVE_VERSION){
+        // Migration 占位：日後若 Schema 升版，可在此依 data.version 做欄位轉換
+        console.warn(`存檔版本 ${data.version} 與目前版本 ${SAVE_VERSION} 不同，嘗試直接相容讀取`);
+      }
+      Object.assign(GameState, data.state);
+      GameState.isDirty = false;
+      currentSlot = n;
+      UI.clearPoop();
+      for (let i=0;i<(GameState.poopCount||0);i++) UI.spawnPoop();
+      drawBackground(GameState.background);
+      UI.toast(`📂 已讀取 Slot ${n}`);
+      UI.updateStats();
+      return true;
+    } catch(e){
+      console.warn('讀檔失敗', e);
+      UI.toast('❌ 讀檔失敗，存檔可能已損毀');
+      return false;
+    }
+  },
+
+  /** 舊版單一存檔（chickenLife_save_v1）自動搬遷到 Slot 1，避免舊玩家資料遺失。
+      只在 Slot 1 目前是空的時候才搬，不會覆蓋玩家已經手動存過的新格式資料。 */
+  migrateLegacyIfNeeded(){
+    try {
+      const legacy = localStorage.getItem(SAVE_KEY_LEGACY);
+      if (legacy && !this.hasSlot(1)){
+        const oldState = JSON.parse(legacy);
+        const payload = {
+          version: SAVE_VERSION,
+          metadata: {
+            name: oldState.name || 'CHICK',
+            level: oldState.level || 1,
+            ageDays: Math.floor((oldState.ageMs||0) / DAY_LENGTH_MS),
+            savedAt: Date.now(),
+          },
+          state: Object.assign({ weather:'sunny', diary:[] }, oldState),
+        };
+        localStorage.setItem(this.slotKey(1), JSON.stringify(payload));
+        localStorage.removeItem(SAVE_KEY_LEGACY);
+      }
+    } catch(e){ /* 搬遷失敗不影響新遊戲啟動，安靜忽略即可 */ }
+  },
 };
 
 /* ============================================================================
@@ -875,6 +1139,13 @@ const UI = {
         drawChick(chickCtx, params);
       }
     });
+    // 天氣粒子動畫獨立成一個 actor：不依賴 frame 序號，直接用高解析度時間戳
+    // 讓雨滴/雪花/閃電可以連續平滑地移動，不受小雞 8fps 的動畫格率限制。
+    animManager.register('weather', {
+      fps: 30,
+      frameCount: 999999,
+      draw: (frame, t) => drawWeather(t),
+    });
     animManager.start();
 
     drawBackground(GameState.background);
@@ -896,10 +1167,11 @@ const UI = {
           case 'daily': GameState.dailyReward(); break;
           case 'work': GameState.work(); break;
           case 'shop': this.openModal('shop-modal'); this.renderShop(); break;
-          case 'settings': this.openModal('settings-modal'); break;
+          case 'diary': this.openModal('diary-modal'); this.renderDiary(); break;
+          case 'settings': this.openModal('settings-modal'); this.renderSaveSlots(); break;
         }
+        GameState.markDirty(); // 任何互動都視為「有未存檔的變更」，需要玩家手動存檔
         this.updateStats();
-        Save.persist();
       });
     });
 
@@ -924,21 +1196,108 @@ const UI = {
       GameState.name = document.getElementById('name-input').value.trim() || 'CHICK';
       GameState.settings.sfx = document.getElementById('sfx-toggle').checked;
       document.getElementById('chick-name').textContent = GameState.name;
-      Save.persist();
-      this.toast('💾 已儲存！');
+      GameState.markDirty();
+      this.toast('✅ 名稱／音效設定已套用（別忘了到下方存檔位存檔）');
+      this.renderSaveSlots();
     });
     document.getElementById('reset-btn').addEventListener('click', () => {
-      if (confirm('確定要清除存檔並重新開始嗎？')){
-        Save.clear();
+      this.confirmPixel('確定要清除全部 3 個存檔位並重新開始嗎？此動作無法復原。', () => {
+        for (let i=1;i<=3;i++) localStorage.removeItem(Save.slotKey(i));
         GameState.restart();
         this.closeModal('settings-modal');
         this.updateStats();
-      }
+        this.toast('🗑️ 已清除所有存檔，重新開始！');
+      });
     });
     document.getElementById('restart-btn').addEventListener('click', () => {
       GameState.restart();
       this.closeModal('death-modal');
       this.updateStats();
+    });
+  },
+
+  /** 通用像素風確認彈窗，取代原生 confirm()。用於存檔覆蓋、清除存檔等需要二次確認的操作。 */
+  confirmPixel(message, onConfirm){
+    document.getElementById('confirm-message').textContent = message;
+    this.openModal('confirm-modal');
+    const yesBtn = document.getElementById('confirm-yes');
+    const noBtn = document.getElementById('confirm-no');
+    // 用 cloneNode 換掉舊按鈕，避免每次呼叫疊加重複的事件監聽器
+    const newYes = yesBtn.cloneNode(true);
+    const newNo = noBtn.cloneNode(true);
+    yesBtn.parentNode.replaceChild(newYes, yesBtn);
+    noBtn.parentNode.replaceChild(newNo, noBtn);
+    newYes.addEventListener('click', () => {
+      this.closeModal('confirm-modal');
+      onConfirm();
+    });
+    newNo.addEventListener('click', () => this.closeModal('confirm-modal'));
+  },
+
+  /** 存檔位列表：顯示 3 個 Slot 目前的內容摘要，並提供「存檔」／「讀取」按鈕。
+      存到已有資料的格位時，會先跳出二次確認彈窗，避免誤蓋掉舊進度。 */
+  renderSaveSlots(){
+    const container = document.getElementById('save-slots');
+    container.innerHTML = '';
+    for (let n=1; n<=3; n++){
+      const meta = Save.readMeta(n);
+      const row = document.createElement('div');
+      row.className = 'save-slot';
+      const info = meta
+        ? `Slot ${n}：${meta.name} Lv.${meta.level} · 第${meta.ageDays}天<br>${new Date(meta.savedAt).toLocaleString()}`
+        : `Slot ${n}：（空）`;
+      row.innerHTML = `
+        <div class="save-slot-info">${info}</div>
+        <div class="save-slot-buttons">
+          <button class="save-here-btn">存檔</button>
+          <button class="load-btn" ${meta ? '' : 'disabled'}>讀取</button>
+        </div>
+      `;
+      row.querySelector('.save-here-btn').addEventListener('click', () => {
+        if (meta){
+          this.confirmPixel(`Slot ${n} 已經有存檔（${meta.name} Lv.${meta.level}），確定要覆蓋嗎？`, () => {
+            Save.saveToSlot(n);
+          });
+        } else {
+          Save.saveToSlot(n);
+        }
+      });
+      const loadBtn = row.querySelector('.load-btn');
+      if (meta){
+        loadBtn.addEventListener('click', () => {
+          this.confirmPixel(`確定要讀取 Slot ${n} 嗎？目前尚未存檔的進度將會遺失。`, () => {
+            Save.loadFromSlot(n);
+            this.renderSaveSlots();
+          });
+        });
+      }
+      container.appendChild(row);
+    }
+  },
+
+  /** 日記列表：新到舊排序，顯示每筆事件的類型 icon、標題、內容與遊戲天數 */
+  renderDiary(){
+    const list = document.getElementById('diary-list');
+    list.innerHTML = '';
+    if (GameState.diary.length === 0){
+      list.innerHTML = `<p>📔 日記還是空的，跟小雞多互動一下，故事就會開始累積囉！</p>`;
+      return;
+    }
+    const typeIcon = {
+      levelup:'🎉', work:'💼', daily:'🎁', shop:'🛍️', growth:'✨',
+      death:'😇', event:'🎲', weather:'🌦️', sick:'🤒',
+    };
+    [...GameState.diary].reverse().forEach(entry => {
+      const row = document.createElement('div');
+      row.className = 'diary-entry';
+      row.innerHTML = `
+        <div class="diary-entry-head">
+          <span class="diary-entry-title">${typeIcon[entry.type]||'📝'} ${entry.title}</span>
+          <span class="diary-entry-meta">第${entry.gameDay}天</span>
+        </div>
+        <div>${entry.description}</div>
+      `;
+      list.appendChild(row);
     });
   },
 
@@ -948,7 +1307,7 @@ const UI = {
         GameState.background = btn.dataset.bg;
         drawBackground(GameState.background);
         SoundManager.click();
-        Save.persist();
+        GameState.markDirty();
       });
     });
   },
@@ -962,6 +1321,10 @@ const UI = {
     list.innerHTML = '';
     if (tab === 'bg'){
       list.innerHTML = `<p>🎨 背景已全部開放，於畫面右上角圖示即可切換：<br>🏠 房間 / 🌱 草地 / 🚜 農場 / 🌲 森林 / ❄️ 雪地 / 🌙 夜晚</p>`;
+      return;
+    }
+    if (tab === 'closet'){
+      this.renderCloset(list);
       return;
     }
     SHOP_ITEMS[tab].forEach(item => {
@@ -984,12 +1347,50 @@ const UI = {
     });
   },
 
+  /** 衣櫃：只列出「已購買」的裝扮，讓玩家自由穿脫、即時反映在小雞身上 */
+  renderCloset(list){
+    const ownedIds = SHOP_ITEMS.wear.filter(item => GameState.ownedWear[item.id]);
+    if (ownedIds.length === 0){
+      list.innerHTML = `<p>👕 衣櫃目前是空的，先到「裝扮」分頁購買一些行頭吧！</p>`;
+      return;
+    }
+    ownedIds.forEach(item => {
+      const wearing = !!GameState.outfit[item.id];
+      const row = document.createElement('div');
+      row.className = 'shop-item';
+      row.innerHTML = `
+        <div class="shop-item-info">
+          <span class="pixel-icon">${item.icon}</span>
+          <div>
+            <div>${item.name} ${wearing ? '（穿戴中）' : ''}</div>
+            <div style="font-size:7px;color:#5c3b26;">${item.desc}</div>
+          </div>
+        </div>
+        <button>${wearing ? '脫下' : '穿上'}</button>
+      `;
+      row.querySelector('button').addEventListener('click', () => {
+        GameState.outfit[item.id] = !GameState.outfit[item.id];
+        SoundManager.click();
+        this.renderCloset(list);
+        GameState.markDirty();
+      });
+      list.appendChild(row);
+    });
+  },
+
   updateStats(){
     document.getElementById('stat-level').textContent = GameState.level;
     document.getElementById('stat-age').textContent = Math.floor(GameState.ageDays());
     document.getElementById('stat-gold').textContent = GameState.gold;
     const stageInfo = STAGES.find(s => s.key === GameState.stage) || STAGES[1];
     document.getElementById('stage-label').textContent = stageInfo.label;
+
+    const weatherInfo = WEATHER_TYPES[GameState.weather] || WEATHER_TYPES.sunny;
+    const weatherEl = document.getElementById('weather-label');
+    weatherEl.textContent = weatherInfo.icon;
+    weatherEl.title = `目前天氣：${weatherInfo.label}`;
+
+    document.getElementById('dirty-flag').classList.toggle('hidden', !GameState.isDirty);
 
     const bars = {
       health: GameState.health, hunger: GameState.hunger, happy: GameState.happy,
@@ -1078,30 +1479,41 @@ const UI = {
    12. 啟動
    ============================================================================ */
 function init(){
-  const hadSave = Save.load();
+  Save.migrateLegacyIfNeeded();
+  const hadSave = Save.hasSlot(1);
+  if (hadSave) Save.loadFromSlot(1);
+
   UI.init();
   UI.updateStats();
   UI.renderShop('food');
 
   if (!hadSave){
     GameState.dailyReward(); // 第一次遊玩直接送每日獎勵
+    GameState.isDirty = true; // 新遊戲尚未存檔，提醒玩家記得手動存檔
   } else {
     const today = new Date().toDateString();
     if (GameState.lastLoginDate !== today){
       setTimeout(() => UI.toast('🎁 今天還沒領每日獎勵，記得點擊「每日獎勵」按鈕！'), 1200);
     }
   }
+  UI.updateStats();
 
   mainTickInterval = setInterval(() => {
     GameState.tick();
     UI.updateStats();
-    Save.persist();
   }, TICK_MS);
 
   scheduleRandomEvent();
+  scheduleWeather();
 
-  // 離開頁面前自動存檔
-  window.addEventListener('beforeunload', () => Save.persist());
+  // 存檔改為全面手動觸發：離開頁面前若仍有未存檔的變更，跳出瀏覽器原生的離開提示，
+  // 而不是像舊版那樣悄悄自動存檔（那樣會讓「手動存檔」這個設計失去意義）。
+  window.addEventListener('beforeunload', (e) => {
+    if (GameState.isDirty){
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);

@@ -137,7 +137,7 @@ button, input{ font-family: var(--font-pixel); }
   background:#000;
   display:flex; align-items:center; justify-content:center;
 }
-#bg-canvas, #chick-canvas{
+#bg-canvas, #weather-canvas, #chick-canvas{
   position:absolute; top:0; left:0;
   width:100%; height:100%;
   min-width:0; min-height:0;
@@ -145,6 +145,7 @@ button, input{ font-family: var(--font-pixel); }
   image-rendering: -moz-crisp-edges;
   image-rendering: crisp-edges;
 }
+#weather-canvas{ pointer-events:none; }
 #chick-canvas{ cursor:pointer; }
 
 #poop-layer{
@@ -165,7 +166,7 @@ button, input{ font-family: var(--font-pixel); }
   display:flex; flex-direction:column; gap:3px; z-index:4;
 }
 .bg-btn{
-  width:22px; height:22px; font-size:11px;
+  width:32px; height:32px; font-size:16px;
   background: var(--c-cream-2);
   border:2px solid var(--c-ink);
   cursor:pointer;
@@ -303,6 +304,48 @@ button, input{ font-family: var(--font-pixel); }
   font-size:9px;
 }
 
+/* ---- 未存檔提示（右上角閃爍） ---- */
+#dirty-flag{
+  color: var(--c-red);
+  animation: blink 1s steps(2) infinite;
+}
+
+/* ---- 設定 Modal 內的分節標題 ---- */
+.section-divider{
+  margin: 12px 0 6px;
+  padding-bottom: 4px;
+  font-size: 8px;
+  border-bottom: 2px solid var(--c-ink);
+}
+
+/* ---- 存檔位列表 ---- */
+.save-slot{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:6px; margin-bottom:6px;
+  background: var(--c-cream-2);
+  border:2px solid var(--c-ink);
+  font-size:8px;
+}
+.save-slot-info{ line-height:1.6; }
+.save-slot-buttons{ display:flex; gap:4px; }
+.save-slot-buttons button{
+  font-size:7px; padding:5px 6px;
+  background: var(--c-green); border:2px solid var(--c-ink); cursor:pointer;
+}
+.save-slot-buttons button.load-btn{ background: var(--c-blue); }
+.save-slot-buttons button:disabled{ background: var(--c-gray); cursor:not-allowed; }
+
+/* ---- 日記條目 ---- */
+.diary-entry{
+  padding:6px; margin-bottom:6px;
+  background: var(--c-cream-2);
+  border:2px solid var(--c-ink);
+  font-size:8px; line-height:1.6;
+}
+.diary-entry-head{ display:flex; justify-content:space-between; margin-bottom:2px; }
+.diary-entry-title{ font-size:9px; }
+.diary-entry-meta{ color:#5c3b26; }
+
 /* ============================================================
    Toast 提示（隨機事件 / 升級等）
    ============================================================ */
@@ -345,5 +388,5 @@ button, input{ font-family: var(--font-pixel); }
 
 @media (max-width: 420px){
   #action-bar{ grid-template-columns: repeat(3, 1fr); }
-  .bg-btn{ width:18px; height:18px; font-size:9px; }
+  .bg-btn{ width:26px; height:26px; font-size:13px; }
 }
