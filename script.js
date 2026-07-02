@@ -179,7 +179,7 @@ fitCanvas(document.getElementById('bg-canvas'));
  * 畫出小雞本體。state 決定表情/動作，frame 用來做幀間變化，stageScale 控制體型大小。
  * outfit: { hat, glasses, scarf, clothes, wings } 任一為 true 表示穿戴中。
  */
-function drawChick(ctx, { state, frame, stageScale, outfit, sick }){
+function drawChick(ctx, { state, frame, stageScale, stageKey, outfit, sick }){
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
   const baseX = ctx.canvas.width / 2;
@@ -242,6 +242,18 @@ function drawChick(ctx, { state, frame, stageScale, outfit, sick }){
   const cy = baseY + offsetY;
   const r = 40 * stageScale; // 放大基礎體型，讓小雞看起來更肥嘟嘟、更有存在感
 
+  // ---- 蛋階段：直接畫蛋，不畫雞 ----
+  if(stageKey === 'egg'){
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(1, 1.3);
+    fillPixelCircle(ctx, 0, 0, r*0.9, '#fff6d6');
+    fillPixelCircle(ctx, -r*0.2, -r*0.2, r*0.3, '#fff');
+    pxRect(ctx, -r*0.15, -r*0.1, r*0.3, 3, '#e0cda8'); // 裂痕
+    ctx.restore();
+    return;
+  }
+
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(tilt * Math.PI/180);
@@ -249,44 +261,82 @@ function drawChick(ctx, { state, frame, stageScale, outfit, sick }){
   ctx.translate(-cx, -cy);
 
   const bodyColor = sick ? PALETTE.sick : PALETTE.bodyMain;
+  const isAdult = stageKey === 'adult' || stageKey === 'teen';
+  const isBaby = stageKey === 'baby' || stageKey === 'kid';
+
+  // ---- 尾羽（成年才有）----
+  if(isAdult){
+    // 三片尾羽
+    fillPixelCircle(ctx, cx + r*0.85, cy + r*0.25, r*0.38, PALETTE.bodyDark);
+    fillPixelCircle(ctx, cx + r*1.05, cy + r*0.05, r*0.32, PALETTE.bodyDark);
+    fillPixelCircle(ctx, cx + r*0.95, cy - r*0.15, r*0.28, PALETTE.bodyLight);
+  }
 
   // ---- 翅膀（裝扮：天使翅膀 或 一般小翅膀）----
   if (outfit.wings){
     fillPixelCircle(ctx, cx - r*0.95, cy, r*0.55, '#ffffff');
     fillPixelCircle(ctx, cx + r*0.95, cy, r*0.55, '#ffffff');
   } else {
-    fillPixelCircle(ctx, cx - r*0.85, cy + r*0.15, r*0.4, PALETTE.bodyDark);
+    // 幼雞翅膀小，成雞翅膀大
+    const wingR = isAdult ? r*0.5 : r*0.4;
+    fillPixelCircle(ctx, cx - r*0.85, cy + r*0.15, wingR, PALETTE.bodyDark);
+    if(isAdult){
+      fillPixelCircle(ctx, cx + r*0.85, cy + r*0.15, wingR*0.9, PALETTE.bodyDark);
+    }
   }
 
   // ---- 身體 ----
   fillPixelCircle(ctx, cx, cy, r, bodyColor);
   fillPixelCircle(ctx, cx - r*0.3, cy - r*0.35, r*0.45, PALETTE.bodyLight);
-
-  // ---- 雞冠（青年雞以上才有） ----
-  if (stageScale >= 1.0){
-    pxRect(ctx, cx-6, cy-r-10, 12, 10, PALETTE.comb);
+  // 成年雞胸口加深
+  if(isAdult){
+    fillPixelCircle(ctx, cx, cy + r*0.25, r*0.55, PALETTE.bodyDark);
   }
 
-  // ---- 臉紅 ----
-  fillPixelCircle(ctx, cx - r*0.55, cy + r*0.1, r*0.18, PALETTE.blush);
-  fillPixelCircle(ctx, cx + r*0.55, cy + r*0.1, r*0.18, PALETTE.blush);
+  // ---- 雞冠（青年雞以上才有） ----
+  if(stageKey === 'teen'){
+    pxRect(ctx, cx-6, cy-r-10, 12, 10, PALETTE.comb);
+  }
+  if(stageKey === 'adult'){
+    // 大雞冠三峰
+    pxRect(ctx, cx-9, cy-r-16, 6, 14, PALETTE.comb);
+    pxRect(ctx, cx-3, cy-r-18, 6, 16, PALETTE.comb);
+    pxRect(ctx, cx+3, cy-r-14, 6, 12, PALETTE.comb);
+    // 肉垂
+    pxRect(ctx, cx-4, cy + r*0.28, 4, 8, PALETTE.comb);
+    pxRect(ctx, cx+0, cy + r*0.28, 4, 8, PALETTE.comb);
+  }
+
+  // ---- 臉紅（幼雞比較明顯）----
+  const blushSize = isBaby ? r*0.22 : r*0.16;
+  fillPixelCircle(ctx, cx - r*0.55, cy + r*0.1, blushSize, PALETTE.blush);
+  fillPixelCircle(ctx, cx + r*0.55, cy + r*0.1, blushSize, PALETTE.blush);
 
   // ---- 眼睛 ----
   const eyeOffsetX = r*0.35, eyeOffsetY = -r*0.05;
   drawEyes(ctx, cx, cy, eyeOffsetX, eyeOffsetY, r, eyeMode, frame);
 
-  // ---- 嘴喙 ----
+  // ---- 嘴喙（成年略長）----
   ctx.fillStyle = PALETTE.beak;
-  const beakW = mouthOpen ? 16 : 12;
-  const beakH = mouthOpen ? 12 : 7;
+  const beakW = mouthOpen ? (isAdult?18:16) : (isAdult?14:12);
+  const beakH = mouthOpen ? (isAdult?13:12) : (isAdult?8:7);
   pxRect(ctx, cx - beakW/2, cy + r*0.18, beakW, beakH, PALETTE.beak);
   if (mouthOpen){
     pxRect(ctx, cx - beakW/2+2, cy + r*0.18+4, beakW-4, beakH-6, PALETTE.beakDark);
   }
 
-  // ---- 腳 ----
-  pxRect(ctx, cx - r*0.4 - 4, cy + r*0.85, 8, 8, PALETTE.feet);
-  pxRect(ctx, cx + r*0.4 - 4, cy + r*0.85, 8, 8, PALETTE.feet);
+  // ---- 腳（成年腳更長）----
+  const legH = isAdult ? 12 : 8;
+  const legY = cy + r*0.85;
+  pxRect(ctx, cx - r*0.4 - 4, legY, 8, legH, PALETTE.feet);
+  pxRect(ctx, cx + r*0.4 - 4, legY, 8, legH, PALETTE.feet);
+  // 爪子
+  if(isAdult){
+    pxRect(ctx, cx - r*0.4 -6, legY+legH, 4, 3, PALETTE.beakDark);
+    pxRect(ctx, cx - r*0.4 +4, legY+legH, 4, 3, PALETTE.beakDark);
+    pxRect(ctx, cx + r*0.4 -6, legY+legH, 4, 3, PALETTE.beakDark);
+    pxRect(ctx, cx + r*0.4 +4, legY+legH, 4, 3, PALETTE.beakDark);
+  }
 
   ctx.restore();
 
@@ -1166,6 +1216,7 @@ const UI = {
           state: this.activeState(),
           frame,
           stageScale: stageInfo.scale,
+          stageKey: GameState.stage,
           outfit: GameState.outfit,
           sick: GameState.health < 20,
         };
