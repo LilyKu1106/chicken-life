@@ -11,6 +11,38 @@
 <body>
 
   <!-- ============================================================
+       遊戲啟動選單：遊戲一律不會自動載入舊存檔或直接進入畫面，
+       必須由玩家在這裡明確選擇「讀取」或「新遊戲」，並指定存檔資料夾
+       （若瀏覽器不支援資料夾存檔，才提供瀏覽器內建儲存空間的備援選項）。
+  ============================================================= -->
+  <div id="startup-menu" class="modal">
+    <div class="modal-box pixel-panel" style="width:min(90vw, 380px);">
+      <div class="modal-header">
+        <span class="pixel-title">🐣 CHICKEN LIFE</span>
+      </div>
+      <div class="modal-body" style="text-align:center;">
+        <p style="font-size:9px; line-height:1.8; margin-bottom:14px;">請選擇存檔方式開始遊戲</p>
+
+        <button id="startup-load-folder" class="action-btn" style="width:100%; margin-bottom:8px; flex-direction:row; gap:8px;">
+          <span>📂</span>選擇存檔資料夾並讀取
+        </button>
+        <button id="startup-new-folder" class="action-btn" style="width:100%; margin-bottom:12px; flex-direction:row; gap:8px;">
+          <span>🆕</span>選擇存檔資料夾並開始新遊戲
+        </button>
+
+        <div id="fs-unsupported-note" class="hidden" style="font-size:8px; line-height:1.7; color:#5c3b26; text-align:left; margin-bottom:10px; padding:6px; border:2px solid var(--c-ink); background:var(--c-cream-2);">
+          ⚠️ 這個瀏覽器/裝置不支援「資料夾存檔」（例如 iPhone / Android 上的 Safari、Chrome 行動版）。此功能目前僅支援桌機版 Chrome / Edge。<br><br>
+          你仍然可以用下面的方式繼續遊玩，存檔會保存在這個瀏覽器裡：
+        </div>
+
+        <button id="startup-use-browser" class="action-btn small" style="width:100%;">
+          💾 使用瀏覽器內建儲存空間（不需要資料夾）
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
        遊戲整體外框：採 16:9 容器，內部自動縮放，置中顯示
   ============================================================= -->
   <div id="game-wrapper">
@@ -41,6 +73,9 @@
         <div id="poop-layer"></div>
         <div id="bubble" class="hidden pixel-panel">!</div>
 
+        <!-- 每日獎勵：依需求移到左上角浮動按鈕 -->
+        <button id="daily-reward-btn" class="bg-btn daily-btn" title="每日獎勵">🎁</button>
+
         <!-- 背景切換 -->
         <div id="bg-switcher">
           <button class="bg-btn" data-bg="room" title="房間">🏠</button>
@@ -51,6 +86,9 @@
           <button class="bg-btn" data-bg="night" title="夜晚">🌙</button>
         </div>
       </main>
+
+      <!-- ========================= 天氣影響提示 ========================= -->
+      <div id="weather-effect-note" class="pixel-sub hidden"></div>
 
       <!-- ========================= 狀態列 ========================= -->
       <section id="stat-bars" class="pixel-panel">
@@ -89,11 +127,11 @@
         <button class="action-btn" data-action="sleep"><span>😴</span>睡覺</button>
         <button class="action-btn" data-action="doctor"><span>💊</span>看醫生</button>
         <button class="action-btn" data-action="clean"><span>🧹</span>清便便</button>
-        <button class="action-btn" data-action="daily"><span>🎁</span>每日獎勵</button>
         <button class="action-btn" data-action="work"><span>💼</span>工作賺錢</button>
         <button class="action-btn" data-action="shop"><span>📦</span>商店</button>
         <button class="action-btn" data-action="diary"><span>📔</span>日記</button>
         <button class="action-btn" data-action="settings"><span>⚙️</span>設定</button>
+        <button class="action-btn" data-action="manual"><span>📖</span>說明書</button>
       </footer>
 
     </div>
@@ -174,6 +212,47 @@
           <button id="confirm-yes" class="action-btn small">確定</button>
           <button id="confirm-no" class="action-btn small danger">取消</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       電子雞養成說明書
+  ============================================================= -->
+  <div id="manual-modal" class="modal hidden">
+    <div class="modal-box pixel-panel">
+      <div class="modal-header">
+        <span class="pixel-title">📖 養成說明書</span>
+        <button class="close-btn" data-close="manual-modal">X</button>
+      </div>
+      <div class="modal-body manual-body">
+        <h4>1. 遊戲核心目標</h4>
+        <p>陪伴小雞從「蛋」經歷 6 個成長階段長大。維持身心健康，累積日記，體驗完整成長週期。</p>
+
+        <h4>2. 狀態指標說明</h4>
+        <p>頂部狀態列數值低於 20% 會有警示：</p>
+        <p>🍗 飽食度：餵食可增加，過低影響健康。</p>
+        <p>😊 心情：玩耍可增加。</p>
+        <p>⚡ 活力：行動會消耗，睡眠可恢復（睡眠是主要活力來源）。</p>
+        <p>🛁 清潔度：隨時間下降，過低會引發疾病。</p>
+        <p>💤 睡眠值：需要睡覺補充。</p>
+
+        <h4>3. 主要照護機制</h4>
+        <p>餵食消耗背包飼料；睡眠讓小雞進入休息狀態，持續恢復活力；洗澡維持衛生；玩耍提升心情但會消耗一點活力；生病時請盡快看醫生或買藥治療。</p>
+
+        <h4>4. 特殊系統</h4>
+        <p>商店可購買飼料／用品／裝扮。已購買的裝扮會出現在「衣櫃」，可隨時穿脫，即時顯示在小雞身上。消耗型道具（如藥水）會自動或由玩家手動使用。</p>
+
+        <h4>環境與事件</h4>
+        <p>遊戲有晴、雨、雪、夜晚、暴風雨等天氣，每 3 分鐘現實時間輪替一次。<b>暴風雨</b>時清潔／活力衰減速度會提升為 2 倍，生病機率也會提高，請加強照護。畫面上會顯示目前天氣對數值的影響。隨機事件會不定時透過提示框通知。</p>
+
+        <h4>日記與存檔</h4>
+        <p>系統會自動記錄成長過程，最多保存 500 筆日記。本遊戲採手動存檔機制，若畫面出現 <b>⚠️ UNSAVED</b>，代表目前進度尚未寫入存檔，請記得手動存檔，避免關閉頁面後進度遺失。</p>
+
+        <h4>常見問題</h4>
+        <p><b>Q：活力不足怎麼辦？</b><br>A：安排睡覺；來不及的話可到商店購買「活力藥水」立即填滿。</p>
+        <p><b>Q：小雞死掉了怎麼辦？</b><br>A：健康值歸零會進入死亡流程，可查看結局統計，並點擊「重新開始」。</p>
+        <p><b>Q：如何確保進度不會消失？</b><br>A：關閉頁面前務必進入設定確認已手動存檔；若尚未存檔就關閉，瀏覽器會跳出離開確認提示。</p>
       </div>
     </div>
   </div>

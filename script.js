@@ -55,6 +55,7 @@ const STAGES = [
 
 const DAY_LENGTH_MS = 60 * 1000;     // 遊戲內：現實 60 秒 = 1 天（方便展示成長系統）
 const TICK_MS = 1000;                 // 數值每秒自然變化一次
+const SLEEP_ENERGY_GAIN = 9;          // 睡眠時每秒恢復的活力（原本 3，需求提升為 3 倍）
 const DECAY = { hunger:0.45, happy:0.35, energy:0.30, clean:0.30, sleep:0.0 };
 const SAVE_KEY_PREFIX = 'chickenLife_slot_';   // + 1 / 2 / 3
 const SAVE_KEY_LEGACY = 'chickenLife_save_v1'; // 舊版單一存檔（用於自動搬遷）
@@ -698,27 +699,43 @@ const GameState = {
     this.markDirty();
   },
 
-  tick(){
+  /** 由主計時器呼叫：換算「距離上次真的執行過 tick 過了幾秒」，並且設定上限。
+      瀏覽器分頁切到背景時，setInterval 常會被節流甚至完全暫停，重新回到前景時
+      有可能一次補上一大段時間；如果直接把這段時間全部套用到數值衰減，
+      小雞可能會在你切回分頁的瞬間「秒死」。這裡把單次套用的時間上限設為 60 秒，
+      超過的部分不予補算（等同於離開很久只會讓小雞餓一點，不會不合理地暴斃）。 */
+  simulate(){
     if (!this.alive) return;
-    this.ageMs += TICK_MS;
+    const now = Date.now();
+    let elapsedSec = (now - (this.lastTickAt || now)) / 1000;
+    this.lastTickAt = now;
+    if (elapsedSec <= 0) return;
+    elapsedSec = Math.min(elapsedSec, 60);
+    this.tick(elapsedSec);
+  },
+
+  tick(elapsedSec = 1){
+    if (!this.alive) return;
+    this.ageMs += TICK_MS * elapsedSec;
 
     const wx = WEATHER_TYPES[this.weather].decay;
 
     if (!this.isSleeping){
-      this.hunger = clamp(this.hunger - DECAY.hunger * wx.hunger);
-      this.happy  = clamp(this.happy  - DECAY.happy  * wx.happy);
-      this.energy = clamp(this.energy - DECAY.energy * wx.energy);
-      this.clean  = clamp(this.clean  - DECAY.clean  * wx.clean);
-      this.sleepStat = clamp(this.sleepStat - 0.25);
+      this.hunger = clamp(this.hunger - DECAY.hunger * wx.hunger * elapsedSec);
+      this.happy  = clamp(this.happy  - DECAY.happy  * wx.happy  * elapsedSec);
+      this.energy = clamp(this.energy - DECAY.energy * wx.energy * elapsedSec);
+      this.clean  = clamp(this.clean  - DECAY.clean  * wx.clean  * elapsedSec);
+      this.sleepStat = clamp(this.sleepStat - 0.25 * elapsedSec);
     } else {
-      this.sleepStat = clamp(this.sleepStat + 4);
-      this.energy = clamp(this.energy + 3);
+      this.sleepStat = clamp(this.sleepStat + 4 * elapsedSec);
+      // 睡眠是主要的活力來源：每秒恢復量提升為原本的 3 倍（3 -> 9）
+      this.energy = clamp(this.energy + SLEEP_ENERGY_GAIN * elapsedSec);
       if (this.sleepStat >= 100) this.wake();
     }
 
     // 天氣造成的額外生病機率（暴風雨 sickChance 為晴天的 3 倍）
     const sickChance = WEATHER_TYPES[this.weather].sickChance;
-    if (!this.isSleeping && Math.random() < 0.004 * sickChance){
+    if (!this.isSleeping && Math.random() < 0.004 * sickChance * elapsedSec){
       const dmg = randInt(5, 15);
       this.health = clamp(this.health - dmg);
       const label = WEATHER_TYPES[this.weather].label;
@@ -732,13 +749,13 @@ const GameState = {
     if (this.happy  < 20) healthDelta -= 0.3;
     if (this.clean  < 30) healthDelta -= 0.3;
     if (this.sleepStat < 20) healthDelta -= 0.3;
-    this.health = clamp(this.health + healthDelta);
+    this.health = clamp(this.health + healthDelta * elapsedSec);
 
     // 體重隨飢餓變化微調
-    this.weight = clamp(this.weight + (this.hunger > 70 ? 0.05 : -0.03), 10, 99);
+    this.weight = clamp(this.weight + (this.hunger > 70 ? 0.05 : -0.03) * elapsedSec, 10, 99);
 
     // 經驗值隨時間自然小幅增加（陪伴成長）
-    this.addExp(0.4);
+    this.addExp(0.4 * elapsedSec);
 
     this.checkStage();
     this.checkAI();
@@ -870,6 +887,21 @@ const GameState = {
     SoundManager.pop();
   },
 
+  /** 手動使用背包中的消耗品（目前僅活力藥水，未來可依 id 擴充其他效果） */
+  useItem(id){
+    if (!this.alive) return;
+    if ((this.inventory[id]||0) <= 0){ UI.toast('❌ 沒有這個道具，先去商店買一瓶吧！'); return; }
+    this.inventory[id]--;
+    if (id === 'energy_potion'){
+      this.energy = clamp(100);
+      UI.toast('🧪 活力藥水生效，活力已完全填滿！');
+      this.addDiary('item', '使用活力藥水', '喝下活力藥水，精神百倍，活力瞬間填滿。');
+    }
+    SoundManager.click();
+    this.markDirty();
+    UI.updateStats();
+  },
+
   work(){
     if (!this.alive) return;
     if (this.energy < 15){ UI.toast('😩 太累了，先休息一下吧！'); return; }
@@ -909,13 +941,13 @@ const GameState = {
       inventory:{food_basic:3, food_premium:0, medicine:0, soap:0, toy:0},
       ownedWear:{hat:false,glasses:false,scarf:false,clothes:false,
                  crown:false,bowtie:false,headphones:false,backpack:false,tie:false},
-      poopCount:0, diary:[], isDirty:true,
+      poopCount:0, diary:[], isDirty:true, lastTickAt: Date.now(), lastLoginDate: null,
     });
     UI.clearPoop();
     drawBackground(this.background);
     if (!mainTickInterval){
       mainTickInterval = setInterval(() => {
-        GameState.tick();
+        GameState.simulate();
         UI.updateStats();
       }, TICK_MS);
     }
@@ -934,6 +966,7 @@ const SHOP_ITEMS = {
     { id:'medicine', name:'藥品',     icon:'💊', price:20, desc:'治療生病，恢復健康 +40' },
     { id:'soap',     name:'清潔用品', icon:'🧼', price:8,  desc:'快速清潔（與洗澡同效）' },
     { id:'toy',      name:'玩具',     icon:'🧸', price:12, desc:'玩耍效果加倍' },
+    { id:'energy_potion', name:'活力藥水', icon:'🧪', price:18, desc:'立即將活力完全填滿', usable:true },
   ],
   wear: [
     { id:'hat',        name:'帽子',     icon:'🎩', price:30, desc:'時尚帽子裝扮' },
@@ -1152,8 +1185,19 @@ const UI = {
   },
 
   bindButtons(){
+    // 統一輸入鎖：部分行動裝置瀏覽器在特定情況下可能讓同一次點擊觸發兩次事件
+    // （touch 合成 click 的邊緣情況），造成「點一次卻扣兩份飼料」的問題。
+    // 這裡用一個極短的鎖定窗口（180ms）確保同一顆按鈕在鎖定期間內的重複觸發會被忽略。
+    let inputLocked = false;
+    const withInputLock = (fn) => {
+      if (inputLocked) return;
+      inputLocked = true;
+      fn();
+      setTimeout(() => { inputLocked = false; }, 180);
+    };
+
     document.querySelectorAll('.action-btn[data-action]').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', () => withInputLock(() => {
         SoundManager.click();
         const action = btn.dataset.action;
         switch(action){
@@ -1164,16 +1208,24 @@ const UI = {
           case 'sleep': GameState.sleepToggle(); break;
           case 'doctor': GameState.doctor(); break;
           case 'clean': GameState.clean_(); break;
-          case 'daily': GameState.dailyReward(); break;
           case 'work': GameState.work(); break;
           case 'shop': this.openModal('shop-modal'); this.renderShop(); break;
           case 'diary': this.openModal('diary-modal'); this.renderDiary(); break;
           case 'settings': this.openModal('settings-modal'); this.renderSaveSlots(); break;
+          case 'manual': this.openModal('manual-modal'); break;
         }
         GameState.markDirty(); // 任何互動都視為「有未存檔的變更」，需要玩家手動存檔
         this.updateStats();
-      });
+      }));
     });
+
+    // 每日獎勵按鈕已移到畫面左上角浮動按鈕，同樣套用輸入鎖
+    document.getElementById('daily-reward-btn').addEventListener('click', () => withInputLock(() => {
+      SoundManager.click();
+      GameState.dailyReward();
+      GameState.markDirty();
+      this.updateStats();
+    }));
 
     chickCanvas.addEventListener('click', () => {
       GameState.happy = clamp(GameState.happy + 1);
@@ -1201,12 +1253,17 @@ const UI = {
       this.renderSaveSlots();
     });
     document.getElementById('reset-btn').addEventListener('click', () => {
-      this.confirmPixel('確定要清除全部 3 個存檔位並重新開始嗎？此動作無法復原。', () => {
-        for (let i=1;i<=3;i++) localStorage.removeItem(Save.slotKey(i));
+      const msg = usingFileSystem
+        ? '確定要重新開始嗎？目前資料夾內的存檔檔案不會被自動刪除，重新開始後記得手動存檔覆蓋它。'
+        : '確定要清除全部 3 個存檔位並重新開始嗎？此動作無法復原。';
+      this.confirmPixel(msg, () => {
+        if (!usingFileSystem){
+          for (let i=1;i<=3;i++) localStorage.removeItem(Save.slotKey(i));
+        }
         GameState.restart();
         this.closeModal('settings-modal');
         this.updateStats();
-        this.toast('🗑️ 已清除所有存檔，重新開始！');
+        this.toast('🗑️ 已重新開始！');
       });
     });
     document.getElementById('restart-btn').addEventListener('click', () => {
@@ -1239,6 +1296,30 @@ const UI = {
   renderSaveSlots(){
     const container = document.getElementById('save-slots');
     container.innerHTML = '';
+
+    if (usingFileSystem){
+      const row = document.createElement('div');
+      row.className = 'save-slot';
+      row.innerHTML = `
+        <div class="save-slot-info">💾 存檔模式：資料夾檔案<br>檔名：${FS_SAVE_FILENAME}</div>
+        <div class="save-slot-buttons">
+          <button id="fs-save-btn">存檔</button>
+        </div>
+      `;
+      row.querySelector('#fs-save-btn').addEventListener('click', async () => {
+        const ok = await FileSave.writeSave();
+        if (ok){
+          GameState.isDirty = false;
+          this.toast('💾 已存檔到資料夾！');
+        } else {
+          this.toast('❌ 存檔失敗，請確認資料夾權限是否仍然有效。');
+        }
+        this.updateStats();
+      });
+      container.appendChild(row);
+      return;
+    }
+
     for (let n=1; n<=3; n++){
       const meta = Save.readMeta(n);
       const row = document.createElement('div');
@@ -1331,7 +1412,9 @@ const UI = {
       const owned = tab === 'wear' ? GameState.ownedWear[item.id] : null;
       const row = document.createElement('div');
       row.className = 'shop-item';
-      const countText = tab !== 'wear' ? ` (持有 ${GameState.inventory[item.id]||0})` : '';
+      const held = GameState.inventory[item.id] || 0;
+      const countText = tab !== 'wear' ? ` (持有 ${held})` : '';
+      const useBtnHtml = item.usable ? `<button class="use-btn" ${held>0?'':'disabled'}>使用</button>` : '';
       row.innerHTML = `
         <div class="shop-item-info">
           <span class="pixel-icon">${item.icon}</span>
@@ -1340,15 +1423,28 @@ const UI = {
             <div style="font-size:7px;color:#5c3b26;">${item.desc}</div>
           </div>
         </div>
-        <button ${owned ? 'disabled' : ''}>${owned ? '已擁有' : `💰${item.price}`}</button>
+        <div style="display:flex; gap:4px;">
+          ${useBtnHtml}
+          <button class="buy-btn" ${owned ? 'disabled' : ''}>${owned ? '已擁有' : `💰${item.price}`}</button>
+        </div>
       `;
-      row.querySelector('button').addEventListener('click', () => Shop.buy(tab, item.id));
+      row.querySelector('.buy-btn').addEventListener('click', () => Shop.buy(tab, item.id));
+      const useBtn = row.querySelector('.use-btn');
+      if (useBtn){
+        useBtn.addEventListener('click', () => {
+          GameState.useItem(item.id);
+          this.renderShop(tab);
+        });
+      }
       list.appendChild(row);
     });
   },
 
   /** 衣櫃：只列出「已購買」的裝扮，讓玩家自由穿脫、即時反映在小雞身上 */
   renderCloset(list){
+    list.innerHTML = ''; // 修正複製 bug：先前只有「衣櫃是空的」分支會清空列表，
+                          // 每次穿脫都呼叫 renderCloset() 重繪，導致舊列表沒清掉、
+                          // 新的一份疊加上去，看起來就像裝扮被複製了。
     const ownedIds = SHOP_ITEMS.wear.filter(item => GameState.ownedWear[item.id]);
     if (ownedIds.length === 0){
       list.innerHTML = `<p>👕 衣櫃目前是空的，先到「裝扮」分頁購買一些行頭吧！</p>`;
@@ -1389,6 +1485,19 @@ const UI = {
     const weatherEl = document.getElementById('weather-label');
     weatherEl.textContent = weatherInfo.icon;
     weatherEl.title = `目前天氣：${weatherInfo.label}`;
+
+    // 天氣影響提示：列出目前天氣讓哪些數值衰減變快（倍率 != 1 才顯示）
+    const noteEl = document.getElementById('weather-effect-note');
+    const statLabel = { hunger:'飽食', happy:'心情', energy:'活力', clean:'清潔' };
+    const affected = Object.entries(weatherInfo.decay)
+      .filter(([,mult]) => mult !== 1)
+      .map(([k,mult]) => `${statLabel[k]} x${mult}`);
+    if (affected.length > 0){
+      noteEl.textContent = `${weatherInfo.icon} ${weatherInfo.label}影響中：${affected.join('、')} 衰減倍率`;
+      noteEl.classList.remove('hidden');
+    } else {
+      noteEl.classList.add('hidden');
+    }
 
     document.getElementById('dirty-flag').classList.toggle('hidden', !GameState.isDirty);
 
@@ -1476,38 +1585,215 @@ const UI = {
 };
 
 /* ============================================================================
-   12. 啟動
+   10b. FileSave — 檔案系統存檔（File System Access API）
+   ----------------------------------------------------------------------------
+   讓玩家指定電腦/手機上的實體資料夾作為存檔位置，遊戲存檔會直接寫成該資料夾內
+   的一個 JSON 檔案（chicken_life_save.json）。
+
+   重要限制：File System Access API（window.showDirectoryPicker）目前只有桌機版
+   Chrome / Edge / Opera 支援，iOS Safari、Android 上的行動版瀏覽器都不支援。
+   因此本模組會先做能力偵測（FS_SUPPORTED），啟動選單會依偵測結果顯示或隱藏
+   對應的按鈕，並在不支援時提供「使用瀏覽器內建儲存空間」的備援路徑，
+   確保遊戲在不支援的裝置上仍然完整可玩。
+
+   規格要求「每次啟動都要在選單裡明確選擇」，所以這裡刻意不做資料夾授權的
+   跨 session 持久化（不存 IndexedDB handle），每次啟動都需要玩家親自選擇一次
+   資料夾——這同時也比較符合瀏覽器的安全模型（很多瀏覽器本來就不會讓網頁
+   在沒有使用者手勢的情況下自動取得資料夾存取權）。
    ============================================================================ */
-function init(){
-  Save.migrateLegacyIfNeeded();
-  const hadSave = Save.hasSlot(1);
-  if (hadSave) Save.loadFromSlot(1);
+const FS_SAVE_FILENAME = 'chicken_life_save.json';
+const FS_SUPPORTED = typeof window.showDirectoryPicker === 'function';
+let fsDirHandle = null;   // 玩家選定的資料夾 FileSystemDirectoryHandle
+let usingFileSystem = false; // true＝目前存檔目標是資料夾檔案；false＝瀏覽器內建儲存空間
+
+const FileSave = {
+  /** 跳出瀏覽器原生的資料夾選擇器，並直接請求讀寫權限。
+      回傳 true 代表成功取得資料夾；使用者按取消（AbortError）則回傳 false。 */
+  async pickFolder(){
+    if (!FS_SUPPORTED) return false;
+    try {
+      fsDirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      return true;
+    } catch(e){
+      if (e && e.name === 'AbortError') return false; // 使用者自己取消選擇，不算錯誤
+      console.warn('選擇存檔資料夾失敗', e);
+      return false;
+    }
+  },
+
+  /** 將目前的完整遊戲狀態寫入資料夾內的存檔檔案。
+      File System Access API 的 createWritable() 在瀏覽器層級本來就是「寫到暫存檔、
+      close() 時才原子性地換上正式檔案」的設計，就算寫入過程中分頁被關閉，
+      原本的存檔檔案也不會變成寫一半的損毀狀態，最壞情況只是這次的寫入沒生效。 */
+  async writeSave(){
+    if (!fsDirHandle) return false;
+    try {
+      const fileHandle = await fsDirHandle.getFileHandle(FS_SAVE_FILENAME, { create: true });
+      const writable = await fileHandle.createWritable();
+      const payload = {
+        version: SAVE_VERSION,
+        metadata: {
+          name: GameState.name,
+          level: GameState.level,
+          ageDays: Math.floor(GameState.ageDays()),
+          savedAt: Date.now(),
+        },
+        state: Save.buildState(),
+      };
+      await writable.write(JSON.stringify(payload, null, 2));
+      await writable.close();
+      return true;
+    } catch(e){
+      console.warn('寫入存檔資料夾失敗', e);
+      return false;
+    }
+  },
+
+  /** 讀取資料夾內的存檔檔案；資料夾內沒有存檔檔案時回傳 null（視為空資料夾）。 */
+  async readSave(){
+    if (!fsDirHandle) return null;
+    try {
+      const fileHandle = await fsDirHandle.getFileHandle(FS_SAVE_FILENAME);
+      const file = await fileHandle.getFile();
+      const text = await file.text();
+      return JSON.parse(text);
+    } catch(e){
+      return null; // 找不到檔案 / 檔案損毀，都當作「這個資料夾還沒有存檔」處理
+    }
+  },
+};
+
+/* ============================================================================
+   11. 啟動選單 UI — 遊戲初始化前的強制選擇畫面
+   ----------------------------------------------------------------------------
+   規格要求：遊戲初始化時不可以直接載入舊存檔或直接進入畫面，必須先覆蓋一個
+   啟動選單，讓玩家明確選擇 A.（資料夾）讀取 或 B.（資料夾）開始新遊戲。
+   ============================================================================ */
+let gameStarted = false; // 防止任何情況下 startGameLoop() 被重複呼叫兩次
+
+function hideStartupMenu(){
+  document.getElementById('startup-menu').classList.add('hidden');
+}
+
+function setupStartupMenu(){
+  const loadBtn = document.getElementById('startup-load-folder');
+  const newBtn  = document.getElementById('startup-new-folder');
+  const note    = document.getElementById('fs-unsupported-note');
+
+  if (!FS_SUPPORTED){
+    loadBtn.disabled = true;
+    newBtn.disabled = true;
+    loadBtn.style.opacity = '0.4';
+    newBtn.style.opacity = '0.4';
+    note.classList.remove('hidden');
+  }
+
+  // A. 選擇存檔資料夾並讀取
+  loadBtn.addEventListener('click', async () => {
+    if (!FS_SUPPORTED) return;
+    const ok = await FileSave.pickFolder();
+    if (!ok) return; // 使用者取消了資料夾選擇，留在選單上讓他重新選
+
+    const data = await FileSave.readSave();
+    if (data){
+      Object.assign(GameState, data.state);
+      GameState.isDirty = false;
+      GameState.lastTickAt = Date.now();
+      usingFileSystem = true;
+      hideStartupMenu();
+      startGameLoop(false);
+    } else {
+      UI.confirmPixel(
+        '這個資料夾裡沒有找到存檔，要以「新遊戲」開始，並在這個資料夾建立新的存檔檔案嗎？',
+        () => {
+          GameState.restart();
+          usingFileSystem = true;
+          hideStartupMenu();
+          startGameLoop(true);
+        }
+      );
+    }
+  });
+
+  // B. 選擇存檔資料夾並開始新遊戲
+  newBtn.addEventListener('click', async () => {
+    if (!FS_SUPPORTED) return;
+    const ok = await FileSave.pickFolder();
+    if (!ok) return;
+
+    const data = await FileSave.readSave();
+    const proceedNewGame = () => {
+      GameState.restart();
+      usingFileSystem = true;
+      hideStartupMenu();
+      startGameLoop(true);
+    };
+    if (data){
+      UI.confirmPixel(
+        `這個資料夾已經有存檔了（${data.metadata?.name || '小雞'} Lv.${data.metadata?.level || 1}），開始新遊戲將會覆蓋它，確定嗎？`,
+        proceedNewGame
+      );
+    } else {
+      proceedNewGame();
+    }
+  });
+
+  // 備援：使用瀏覽器內建儲存空間（LocalStorage 3 Slot），不需要資料夾
+  document.getElementById('startup-use-browser').addEventListener('click', () => {
+    Save.migrateLegacyIfNeeded();
+    const hadSave = Save.hasSlot(1);
+    if (hadSave) Save.loadFromSlot(1);
+    GameState.lastTickAt = Date.now();
+    usingFileSystem = false;
+    hideStartupMenu();
+    startGameLoop(!hadSave);
+  });
+}
+
+/* ============================================================================
+   12. 啟動遊戲主迴圈（在啟動選單完成選擇後才會呼叫）
+   ============================================================================ */
+function startGameLoop(isNewGame){
+  if (gameStarted) return; // 防禦性處理：確保 UI.init()／animManager.start() 不會被重複呼叫
+  gameStarted = true;
 
   UI.init();
   UI.updateStats();
   UI.renderShop('food');
 
-  if (!hadSave){
-    GameState.dailyReward(); // 第一次遊玩直接送每日獎勵
+  if (isNewGame){
+    GameState.dailyReward(); // 新遊戲直接送每日登入獎勵
     GameState.isDirty = true; // 新遊戲尚未存檔，提醒玩家記得手動存檔
   } else {
     const today = new Date().toDateString();
     if (GameState.lastLoginDate !== today){
-      setTimeout(() => UI.toast('🎁 今天還沒領每日獎勵，記得點擊「每日獎勵」按鈕！'), 1200);
+      setTimeout(() => UI.toast('🎁 今天還沒領每日獎勵，記得點擊左上角的每日獎勵按鈕！'), 1200);
     }
   }
   UI.updateStats();
 
+  GameState.lastTickAt = Date.now();
   mainTickInterval = setInterval(() => {
-    GameState.tick();
+    GameState.simulate();
     UI.updateStats();
   }, TICK_MS);
+
+  // 分頁切到背景時（例如切到別的 App），瀏覽器常會節流甚至暫停 setInterval；
+  // 切回前景的當下主動補跑一次 simulate()，讓「經過的時間」立刻依上限公平地補算，
+  // 不必等到下一個整秒的 setInterval 才反應過來。
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible'){
+      GameState.simulate();
+      UI.updateStats();
+    }
+  });
 
   scheduleRandomEvent();
   scheduleWeather();
 
   // 存檔改為全面手動觸發：離開頁面前若仍有未存檔的變更，跳出瀏覽器原生的離開提示，
-  // 而不是像舊版那樣悄悄自動存檔（那樣會讓「手動存檔」這個設計失去意義）。
+  // 而不是悄悄自動存檔（那樣會讓「手動存檔」這個設計失去意義，且檔案系統模式下
+  // 寫檔是非同步的，分頁關閉當下也無法保證能寫完）。
   window.addEventListener('beforeunload', (e) => {
     if (GameState.isDirty){
       e.preventDefault();
@@ -1516,6 +1802,6 @@ function init(){
   });
 }
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', setupStartupMenu);
 
 })();
