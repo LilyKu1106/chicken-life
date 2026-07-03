@@ -1194,13 +1194,15 @@ const MiniGameSystem = (() => {
     // 套用獎勵
     if (result.gold)      GameState.addGold(result.gold);
     if (result.hunger)    GameState.hunger  = clamp(GameState.hunger  + result.hunger);
-    if (result.happy)     GameState.happy   = clamp(GameState.happy   + result.happy);
-    if (result.happyPen)  GameState.happy   = clamp(GameState.happy   + result.happyPen);
+    // 玩遊戲不管成敗都給 +20 心情（玩耍本身就令小雞開心）
+    const baseHappy = 20;
+    GameState.happy = clamp(GameState.happy + baseHappy + (result.happy || 0) + (result.happyPen || 0));
 
     const rewardParts = [];
     if (result.gold > 0)  rewardParts.push(`+${result.gold} 💰`);
     if (result.hunger > 0) rewardParts.push(`+${result.hunger} 🍗`);
-    if (result.happy > 0)  rewardParts.push(`+${result.happy} 😊`);
+    const totalHappy = baseHappy + (result.happy || 0) + (result.happyPen || 0);
+    rewardParts.push(`${totalHappy >= 0 ? '+' : ''}${totalHappy} 😊`);
 
     GameState.addDiary('minigame', result.gameName, result.summary + (rewardParts.length ? ` 獎勵：${rewardParts.join(' ')}` : ''));
     GameState.markDirty();
@@ -1366,15 +1368,24 @@ const BugHuntGame = (() => {
     done=false; score=0; penalty=0; timeLeft=30; startT=performance.now(); bugs=[];
     for(let i=0;i<5;i++) spawnBug();
     hud.textContent='🐛 0  ☠️ 0  ⏱️ 30';
+    let lastTouchFired = false; // 防止 touchstart → 合成 click 雙重觸發
     const onClick = (e) => {
+      if (e.type === 'touchstart') lastTouchFired = true;
+      else if (lastTouchFired){ lastTouchFired = false; return; } // 跳過合成 click
+
       const rect = canvas.getBoundingClientRect();
-      const mx = (e.clientX ?? e.touches?.[0]?.clientX ?? 0) - rect.left;
-      const my = (e.clientY ?? e.touches?.[0]?.clientY ?? 0) - rect.top;
-      const scale = W / rect.width;
-      const bx = mx*scale, by = my*scale;
+      const src  = e.touches?.[0] ?? e;
+      const mx = (src.clientX ?? 0) - rect.left;
+      const my = (src.clientY ?? 0) - rect.top;
+      // canvas 的 CSS 顯示尺寸與內部解析度可能不同（因為 dpr），要統一換算
+      const scaleX = canvas.width  / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const bx = mx * scaleX, by = my * scaleY;
       for(let i=bugs.length-1;i>=0;i--){
         const b=bugs[i];
-        if(Math.abs(bx-b.x)<28&&Math.abs(by-b.y)<28){
+        // 碰撞半徑改為相對畫布大小，避免大螢幕判定偏小
+        const hitR = Math.max(28, canvas.width / 14);
+        if(Math.abs(bx-b.x)<hitR && Math.abs(by-b.y)<hitR){
           if(b.bad){ penalty++; } else { score+=10; }
           bugs.splice(i,1);
           spawnBug();
@@ -1382,9 +1393,12 @@ const BugHuntGame = (() => {
         }
       }
     };
-    canvas.addEventListener('click', onClick);
     canvas.addEventListener('touchstart', onClick, {passive:true});
-    BugHuntGame._cleanup = () => { canvas.removeEventListener('click', onClick); canvas.removeEventListener('touchstart', onClick); };
+    canvas.addEventListener('click', onClick);
+    BugHuntGame._cleanup = () => {
+      canvas.removeEventListener('touchstart', onClick);
+      canvas.removeEventListener('click', onClick);
+    };
   }
 
   function update(){
