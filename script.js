@@ -1235,7 +1235,7 @@ const CatchFoodGame = (() => {
   let chickX, chickSpeed, score, misses, timeLeft, startT, lastT;
   let items = [], spawnTimer = 0;
   const GOOD  = ['🌽','🥚','🌾','🍠','🥕'];
-  const BAD   = ['🦠','💀','🤢'];
+  const BAD   = ['💀']; // 壞食物一律是骷髏，清晰易辨
   let keys = { left:false, right:false };
   let touchX = null;
 
@@ -1355,8 +1355,8 @@ const CatchFoodGame = (() => {
 const BugHuntGame = (() => {
   let W, H, ctx, done, resultData, endCb, hud;
   let bugs=[], score=0, penalty=0, timeLeft, startT;
-  const GOOD_BUGS = ['🪱','🐛','🦗'];
-  const BAD_BUGS  = ['💀','🦟','🕷️'];
+  const GOOD_BUGS = ['🪱','🐛','🦗','🐝','🦋'];
+  const BAD_BUGS  = ['💀']; // 壞蟲一律是骷髏，讓玩家一眼就能分辨
 
   function spawnBug(){
     const isBad = Math.random() < 0.30;
