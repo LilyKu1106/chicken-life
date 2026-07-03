@@ -109,7 +109,7 @@ button, input{ font-family: var(--font-pixel); }
   display:flex; align-items:center; justify-content:space-between;
   padding: 6px 10px;
   margin: 4px;
-  flex: 0 0 auto;     /* 固定高度，不參與壓縮 */
+  flex: 0 1 auto;     /* 正常情況下用內容自然高度，極端窄高比時允許縮小，但絕不會撐破外框 */
   min-height: 0;
 }
 .top-left, .top-mid, .top-right{
@@ -121,13 +121,16 @@ button, input{ font-family: var(--font-pixel); }
    ============================================================ */
 #scene{
   position:relative;
-  /* 核心修改：上方小雞畫面「絕不壓縮」。
-     改為固定比例(16:9)，flex 不參與伸縮，確保手機上字體放大時
-     小雞與背景永遠完整顯示。下方按鈕區改為可滾動。 */
-  flex: 0 0 auto;
-  aspect-ratio: 16 / 9;
-  width: calc(100% - 8px);
-  min-height: 0;
+  /* flex: 1 1 0 是讓「小雞主畫面」自動吃掉所有其他面板（Header/狀態列/按鈕列）
+     用完之後「剩下的全部空間」的標準寫法——這正是把小雞放大、置中、
+     成為整個畫面視覺焦點的關鍵：其他面板只取自己需要的高度，
+     scene 永遠拿走剩餘的最大區塊。 */
+  flex: 1 1 0;
+  min-height: 0;   /* 關鍵修正：預設 flex item 的 min-height 是 auto，
+                       對 <canvas> 這種「可替換元素」會用其內在尺寸(320x180)
+                       當作不可壓縮的下限，導致矮螢幕下整個 #scene 無法縮小，
+                       進而把下方的 #action-bar 擠出可視範圍而被裁切。
+                       設成 0 後，#scene 才能真正依可用空間自由縮放。 */
   margin: 0 4px;
   border: 3px solid var(--c-ink);
   overflow:hidden;
@@ -183,7 +186,7 @@ button, input{ font-family: var(--font-pixel); }
   display:grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 4px 14px;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   min-height: 0;
 }
 .stat-row{ display:flex; align-items:center; gap:6px; }
@@ -213,35 +216,55 @@ button, input{ font-family: var(--font-pixel); }
    底部動作按鈕列
    ============================================================ */
 #action-bar{
-  flex: 1 1 auto;
-  min-height: 0;
+  flex: 0 0 auto;       /* 完全不允許縮小，以確保按鈕永遠完整顯示 */
+  height: 90px;         /* 固定高度：足夠放下大圖示 + 文字標籤 */
   margin: 4px;
-  padding: 6px;
-  display:grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+  padding: 4px 6px;
+  display: flex;        /* 改為單排 flex（原本是 grid），搭配橫向捲動 */
+  flex-direction: row;
+  align-items: stretch;
+  gap: 4px;
+  overflow-x: auto;     /* 水平捲動：手機左右滑，桌機可用滑鼠滾輪橫向滾 */
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;   /* 每次滑動對齊到整顆按鈕，不會停在一半 */
+  -webkit-overflow-scrolling: touch;
   background: var(--c-cream-2);
   border: 3px solid var(--c-ink);
-  overflow-y: auto;
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-  /* 下方按鈕區可滾動，上方 #scene 絕不被壓縮 */
+  /* 隱藏捲軸外觀（仍可滑動），避免破壞像素風 */
+  scrollbar-width: none;
 }
+#action-bar::-webkit-scrollbar{ display: none; }
+
+/* 捲動提示：右側淡出，讓玩家知道可以往右滑動查看更多按鈕 */
+#action-bar-wrap{
+  position: relative;
+  flex: 0 0 auto;
+}
+#action-bar-wrap::after{
+  content:'▶';
+  position:absolute; top:50%; right:8px; transform:translateY(-50%);
+  font-size:10px; color: var(--c-gray);
+  pointer-events: none; z-index: 2;
+}
+#action-bar-wrap.scrolled-end::after{ display: none; }
 
 .action-btn{
   display:flex; flex-direction:column; align-items:center; justify-content:center;
-  gap:3px;
-  padding: 7px 3px;
-  font-size: 14px;   /* 依需求放大 2 倍（原本 7px） */
+  gap: 3px;
+  /* 固定寬度讓每顆按鈕呈正方形，不受容器寬度影響 */
+  flex: 0 0 70px;
+  min-width: 70px;
+  padding: 6px 2px;
+  font-size: 13px;
   background: var(--c-green);
   border: 2px solid var(--c-ink);
   box-shadow: inset 0 0 0 1px var(--c-white), 2px 2px 0 var(--c-ink);
-  cursor:pointer;
+  cursor: pointer;
   color: var(--c-ink);
   transition: transform .05s linear;
+  scroll-snap-align: start;  /* 配合 scroll-snap 讓對齊更順 */
 }
-.action-btn span{ font-size:28px; }   /* 依需求放大 2 倍（原本 14px） */
+.action-btn span{ font-size: 26px; }
 .action-btn:hover{ background: var(--c-yellow); }
 .action-btn:active{
   transform: translate(2px,2px);
@@ -398,18 +421,62 @@ button, input{ font-family: var(--font-pixel); }
 .hidden{ display:none !important; }
 
 /* ============================================================
-   RWD：平板 / 手機
+   小遊戲覆蓋層
    ============================================================ */
+#mg-overlay{
+  position:fixed; inset:0; z-index:100;
+  background:#1a1208;
+  display:flex; align-items:center; justify-content:center;
+}
+#mg-overlay.hidden{ display:none; }
+#mg-canvas{
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  image-rendering: -moz-crisp-edges;
+  max-width:100vw; max-height:100vh;
+  display:block;
+}
+#mg-hud{
+  position:absolute; top:8px; left:50%; transform:translateX(-50%);
+  padding:4px 14px; font-size:10px; white-space:nowrap; z-index:2;
+  min-width:160px; text-align:center;
+}
+#mg-quit-btn{
+  position:absolute; top:8px; right:10px; z-index:2;
+  padding:5px 10px; font-size:9px; cursor:pointer;
+  font-family:var(--font-pixel); background:var(--c-red); color:#fff;
+  border:2px solid var(--c-ink);
+}
+#mg-result{ z-index:110; }
+
+/* 翻牌記憶遊戲用 DOM 渲染，蓋在 mg-overlay 上 */
+#mg-memory-grid{
+  position:absolute; inset:0;
+  display:grid;
+  grid-template-columns: repeat(4,1fr);
+  grid-template-rows: repeat(4,1fr);
+  gap:6px; padding:50px 12px 12px;
+}
+.mg-card{
+  background: var(--c-cream-2);
+  border:3px solid var(--c-ink);
+  display:flex; align-items:center; justify-content:center;
+  font-size:clamp(20px, 5vw, 34px);
+  cursor:pointer;
+  border-radius:2px;
+}
+.mg-card.flipped{ background:var(--c-green); }
+.mg-card.matched{ background:var(--c-yellow); cursor:default; }
+.mg-card.hidden-face{ font-size:0; background:var(--c-brown); }
 @media (max-width: 720px){
   .pixel-title{ font-size:8px; }
   .pixel-sub{ font-size:7px; }
   #stat-bars{ grid-template-columns: repeat(2, 1fr); }
-  #action-bar{ grid-template-columns: repeat(4, 1fr); }
-  .action-btn{ font-size:12px; }
-  .action-btn span{ font-size:24px; }
+  .action-btn{ flex: 0 0 62px; min-width:62px; font-size:11px; }
+  .action-btn span{ font-size:22px; }
 }
 
 @media (max-width: 420px){
-  #action-bar{ grid-template-columns: repeat(3, 1fr); }
+  .action-btn{ flex: 0 0 56px; min-width:56px; }
   .bg-btn{ width:26px; height:26px; font-size:13px; }
 }

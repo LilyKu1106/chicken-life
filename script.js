@@ -176,297 +176,294 @@ fitCanvas(chickCanvas);
 fitCanvas(document.getElementById('bg-canvas'));
 
 /**
- * 畫出小雞本體。state 決定表情/動作，frame 用來做幀間變化，stageScale 控制體型大小。
- * outfit: { hat, glasses, scarf, clothes, wings } 任一為 true 表示穿戴中。
+/**
+ * 主繪製入口：依成長階段（stage）分發到各自的像素繪製函式。
+ * 每個階段有獨特的體型比例、顏色、五官特徵和動畫表現。
+ * outfit 和 sick 由上層傳入，統一在各子函式最後套用裝扮層。
  */
-function drawChick(ctx, { state, frame, stageScale, stageKey, outfit, sick }){
+function drawChick(ctx, { state, frame, stage, outfit, sick }){
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  const cx = ctx.canvas.width / 2;
+  const cy = ctx.canvas.height / 2 + 16;
 
-  const baseX = ctx.canvas.width / 2;
-  const baseY = ctx.canvas.height / 2 + 20;
-  const bob = Math.sin(frame / 8 * Math.PI * 2) * 4; // 待機浮動
-
-  let offsetY = 0, squash = 1, eyeMode = 'normal', mouthOpen = false, tilt = 0;
-
-  switch(state){
-    case 'idle':
-      offsetY = bob;
-      break;
-    case 'walk':
-      offsetY = Math.abs(Math.sin(frame)) * 6 - 3;
-      tilt = Math.sin(frame) * 4;
-      break;
-    case 'eat':
-      mouthOpen = frame % 2 === 0;
-      offsetY = bob * 0.4;
-      break;
-    case 'sleep':
-      eyeMode = 'closed';
-      offsetY = Math.sin(frame/8*Math.PI*2) * 1.5;
-      squash = 0.96;
-      break;
-    case 'happy':
-      eyeMode = 'happy';
-      offsetY = -Math.abs(Math.sin(frame)) * 8;
-      break;
-    case 'sad':
-      eyeMode = 'sad';
-      offsetY = 4;
-      squash = 0.95;
-      break;
-    case 'sick':
-      eyeMode = 'sick';
-      offsetY = bob * 0.5;
-      break;
-    case 'poop':
-      squash = 0.85;
-      offsetY = 4;
-      break;
-    case 'clean':
-      offsetY = bob * 0.6;
-      eyeMode = 'happy';
-      break;
-    case 'levelup':
-      offsetY = -Math.abs(Math.sin(frame)) * 12;
-      eyeMode = 'happy';
-      break;
-    case 'dead':
-      squash = 0.55;
-      tilt = 90;
-      eyeMode = 'dead';
-      offsetY = 30;
-      break;
+  switch(stage){
+    case 'egg':   drawEgg(ctx, cx, cy, state, frame); return;
+    case 'baby':  drawBaby(ctx, cx, cy, state, frame, outfit, sick); return;
+    case 'kid':   drawKid(ctx, cx, cy, state, frame, outfit, sick); return;
+    case 'teen':  drawTeen(ctx, cx, cy, state, frame, outfit, sick); return;
+    case 'adult': drawAdult(ctx, cx, cy, state, frame, outfit, sick); return;
+    case 'old':   drawOldChick(ctx, cx, cy, state, frame, outfit, sick); return;
+    default:      drawBaby(ctx, cx, cy, state, frame, outfit, sick);
   }
+}
 
-  const cx = baseX;
-  const cy = baseY + offsetY;
-  const r = 40 * stageScale; // 放大基礎體型，讓小雞看起來更肥嘟嘟、更有存在感
+/* ─── 動畫工具：每個繪製函式都用這組工具解析 state/frame ─── */
+function getMotionParams(state, frame){
+  const bob  = Math.sin(frame / 8 * Math.PI * 2) * 4;
+  let offsetY=0, squash=1, eyeMode='normal', mouthOpen=false, tilt=0;
+  switch(state){
+    case 'idle':    offsetY = bob; break;
+    case 'walk':    offsetY = Math.abs(Math.sin(frame))*6-3; tilt=Math.sin(frame)*4; break;
+    case 'eat':     mouthOpen = frame%2===0; offsetY = bob*0.4; break;
+    case 'sleep':   eyeMode='closed'; offsetY=Math.sin(frame/8*Math.PI*2)*1.5; squash=0.96; break;
+    case 'happy':   eyeMode='happy'; offsetY=-Math.abs(Math.sin(frame))*8; break;
+    case 'sad':     eyeMode='sad'; offsetY=4; squash=0.95; break;
+    case 'sick':    eyeMode='sick'; offsetY=bob*0.5; break;
+    case 'poop':    squash=0.85; offsetY=4; break;
+    case 'clean':   offsetY=bob*0.6; eyeMode='happy'; break;
+    case 'levelup': offsetY=-Math.abs(Math.sin(frame))*12; eyeMode='happy'; break;
+    case 'dead':    squash=0.55; tilt=90; eyeMode='dead'; offsetY=30; break;
+  }
+  return { offsetY, squash, eyeMode, mouthOpen, tilt };
+}
 
-  // ---- 蛋階段：直接畫蛋，不畫雞 ----
-  if(stageKey === 'egg'){
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.scale(1, 1.3);
-    fillPixelCircle(ctx, 0, 0, r*0.9, '#fff6d6');
-    fillPixelCircle(ctx, -r*0.2, -r*0.2, r*0.3, '#fff');
-    pxRect(ctx, -r*0.15, -r*0.1, r*0.3, 3, '#e0cda8'); // 裂痕
-    ctx.restore();
+/* ─── 眼睛（共用，各函式呼叫）─── */
+function drawEyes(ctx, cx, cy, ox, oy, r, mode, frame){
+  const ex1=cx-ox, ex2=cx+ox, ey=cy+oy;
+  if (mode==='closed'||mode==='happy'){
+    ['#2b2017'].forEach(()=>{
+      pxRect(ctx,ex1-7,ey,14,3,'#2b2017'); pxRect(ctx,ex1-7,ey-3,3,3,'#2b2017'); pxRect(ctx,ex1+4,ey-3,3,3,'#2b2017');
+      pxRect(ctx,ex2-7,ey,14,3,'#2b2017'); pxRect(ctx,ex2-7,ey-3,3,3,'#2b2017'); pxRect(ctx,ex2+4,ey-3,3,3,'#2b2017');
+    });
     return;
   }
+  if (mode==='dead'){
+    pxRect(ctx,ex1-6,ey-2,12,4,PALETTE.outline); pxRect(ctx,ex2-6,ey-2,12,4,PALETTE.outline); return;
+  }
+  if (mode==='sick'){
+    [[-6,-6],[-2,-2],[2,2],[6,-6],[-6,2]].forEach(([dx,dy])=>{ px(ctx,ex1+dx,ey+dy,PALETTE.outline); px(ctx,ex2+dx,ey+dy,PALETTE.outline); });
+    return;
+  }
+  fillPixelCircle(ctx,ex1,ey,8,PALETTE.eyeWhite); fillPixelCircle(ctx,ex2,ey,8,PALETTE.eyeWhite);
+  const pupilDY=mode==='sad'?3:0;
+  fillPixelCircle(ctx,ex1,ey+pupilDY,4,PALETTE.eyeBlack); fillPixelCircle(ctx,ex2,ey+pupilDY,4,PALETTE.eyeBlack);
+  if (mode==='sad'){ pxRect(ctx,ex1-8,ey-10,14,3,PALETTE.outline); pxRect(ctx,ex2-6,ey-10,14,3,PALETTE.outline); }
+}
+
+/* ─── 狀態特效（共用）─── */
+function drawStateFx(ctx, cx, cy, r, state, frame){
+  if (state==='sad'&&frame%8<4) pxRect(ctx,cx+r*0.4,cy+r*0.15,4,8,PALETTE.tear);
+  if (state==='sick') pxRect(ctx,cx+r*0.6,cy-r*0.6,6,8,'#aee8ff');
+  if (state==='sleep'){ ctx.font='12px monospace'; ctx.fillStyle=PALETTE.outline; ctx.fillText('z',cx+r*0.5,cy-r-10-(frame%8)*2); }
+  if (state==='levelup'){ for(let i=0;i<5;i++){ const a=frame*0.4+i*(Math.PI*2/5); px(ctx,cx+Math.cos(a)*r*1.4,cy+Math.sin(a)*r*1.4,PALETTE.bodyMain); } }
+}
+
+/* ─── 裝扮（共用，Z-order: scarf/clothes → accessories → glasses → hats）─── */
+function drawOutfit(ctx, cx, cy, r, outfit){
+  if (outfit.scarf)   pxRect(ctx,cx-r*0.6,cy+r*0.55,r*1.2,r*0.3,'#6fc3df');
+  if (outfit.clothes) pxRect(ctx,cx-r*0.65,cy+r*0.3,r*1.3,r*0.55,'#b08bdb');
+  if (outfit.tie){    pxRect(ctx,cx-3,cy+r*0.5,6,r*0.5,'#c2392c'); pxRect(ctx,cx-6,cy+r*0.42,12,8,'#e8584a'); }
+  if (outfit.backpack){ pxRect(ctx,cx+r*0.55,cy+r*0.1,r*0.4,r*0.55,'#8a5a3b'); pxRect(ctx,cx+r*0.6,cy+r*0.05,r*0.28,r*0.14,'#c2392c'); }
+  if (outfit.bowtie){ pxRect(ctx,cx-10,cy+r*0.45,8,8,'#ff9fb2'); pxRect(ctx,cx+2,cy+r*0.45,8,8,'#ff9fb2'); pxRect(ctx,cx-2,cy+r*0.45+2,4,4,'#e8584a'); }
+  if (outfit.headphones){ pxRect(ctx,cx-r*0.85,cy-r*0.15,8,r*0.5,'#2b2017'); pxRect(ctx,cx+r*0.85-8,cy-r*0.15,8,r*0.5,'#2b2017'); pxRect(ctx,cx-r*0.85,cy-r*0.55,r*1.7,8,'#2b2017'); }
+  if (outfit.glasses){ pxRect(ctx,cx-r*0.65,cy-r*0.12,r*0.45,r*0.3,'rgba(40,40,40,.85)'); pxRect(ctx,cx+r*0.2,cy-r*0.12,r*0.45,r*0.3,'rgba(40,40,40,.85)'); pxRect(ctx,cx-r*0.2,cy-r*0.02,r*0.4,4,PALETTE.outline); }
+  if (outfit.hat){    pxRect(ctx,cx-r*0.55,cy-r*1.55,r*1.1,r*0.35,'#e8584a'); pxRect(ctx,cx-r*0.75,cy-r*1.25,r*1.5,r*0.18,'#c2392c'); }
+  if (outfit.crown){  pxRect(ctx,cx-r*0.5,cy-r*1.45,r*1.0,r*0.28,'#ffd23f'); px(ctx,cx-r*0.4,cy-r*1.6,'#ffd23f'); px(ctx,cx,cy-r*1.68,'#ffd23f'); px(ctx,cx+r*0.4,cy-r*1.6,'#ffd23f'); px(ctx,cx,cy-r*1.5,'#ff9fb2'); }
+}
+
+/* ════════════════════════════════════════════════════════
+   🥚 蛋（Egg）— 橢圓蛋殼、搖晃、偶爾露出眼睛
+   ════════════════════════════════════════════════════════ */
+function drawEgg(ctx, cx, cy, state, frame){
+  const wobble = Math.sin(frame/3*Math.PI*2)*5;
+  const crack  = state==='levelup'||state==='happy';
 
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.rotate(tilt * Math.PI/180);
-  ctx.scale(1, squash);
+  ctx.rotate(wobble * Math.PI/180);
   ctx.translate(-cx, -cy);
 
-  const bodyColor = sick ? PALETTE.sick : PALETTE.bodyMain;
-  const isAdult = stageKey === 'adult' || stageKey === 'teen';
-  const isBaby = stageKey === 'baby' || stageKey === 'kid';
-
-  // ---- 尾羽（成年才有）----
-  if(isAdult){
-    // 三片尾羽
-    fillPixelCircle(ctx, cx + r*0.85, cy + r*0.25, r*0.38, PALETTE.bodyDark);
-    fillPixelCircle(ctx, cx + r*1.05, cy + r*0.05, r*0.32, PALETTE.bodyDark);
-    fillPixelCircle(ctx, cx + r*0.95, cy - r*0.15, r*0.28, PALETTE.bodyLight);
-  }
-
-  // ---- 翅膀（裝扮：天使翅膀 或 一般小翅膀）----
-  if (outfit.wings){
-    fillPixelCircle(ctx, cx - r*0.95, cy, r*0.55, '#ffffff');
-    fillPixelCircle(ctx, cx + r*0.95, cy, r*0.55, '#ffffff');
-  } else {
-    // 幼雞翅膀小，成雞翅膀大
-    const wingR = isAdult ? r*0.5 : r*0.4;
-    fillPixelCircle(ctx, cx - r*0.85, cy + r*0.15, wingR, PALETTE.bodyDark);
-    if(isAdult){
-      fillPixelCircle(ctx, cx + r*0.85, cy + r*0.15, wingR*0.9, PALETTE.bodyDark);
-    }
-  }
-
-  // ---- 身體 ----
-  fillPixelCircle(ctx, cx, cy, r, bodyColor);
-  fillPixelCircle(ctx, cx - r*0.3, cy - r*0.35, r*0.45, PALETTE.bodyLight);
-  // 成年雞胸口加深
-  if(isAdult){
-    fillPixelCircle(ctx, cx, cy + r*0.25, r*0.55, PALETTE.bodyDark);
-  }
-
-  // ---- 雞冠（青年雞以上才有） ----
-  if(stageKey === 'teen'){
-    pxRect(ctx, cx-6, cy-r-10, 12, 10, PALETTE.comb);
-  }
-  if(stageKey === 'adult'){
-    // 大雞冠三峰
-    pxRect(ctx, cx-9, cy-r-16, 6, 14, PALETTE.comb);
-    pxRect(ctx, cx-3, cy-r-18, 6, 16, PALETTE.comb);
-    pxRect(ctx, cx+3, cy-r-14, 6, 12, PALETTE.comb);
-    // 肉垂
-    pxRect(ctx, cx-4, cy + r*0.28, 4, 8, PALETTE.comb);
-    pxRect(ctx, cx+0, cy + r*0.28, 4, 8, PALETTE.comb);
-  }
-
-  // ---- 臉紅（幼雞比較明顯）----
-  const blushSize = isBaby ? r*0.22 : r*0.16;
-  fillPixelCircle(ctx, cx - r*0.55, cy + r*0.1, blushSize, PALETTE.blush);
-  fillPixelCircle(ctx, cx + r*0.55, cy + r*0.1, blushSize, PALETTE.blush);
-
-  // ---- 眼睛 ----
-  const eyeOffsetX = r*0.35, eyeOffsetY = -r*0.05;
-  drawEyes(ctx, cx, cy, eyeOffsetX, eyeOffsetY, r, eyeMode, frame);
-
-  // ---- 嘴喙（成年略長）----
-  ctx.fillStyle = PALETTE.beak;
-  const beakW = mouthOpen ? (isAdult?18:16) : (isAdult?14:12);
-  const beakH = mouthOpen ? (isAdult?13:12) : (isAdult?8:7);
-  pxRect(ctx, cx - beakW/2, cy + r*0.18, beakW, beakH, PALETTE.beak);
-  if (mouthOpen){
-    pxRect(ctx, cx - beakW/2+2, cy + r*0.18+4, beakW-4, beakH-6, PALETTE.beakDark);
-  }
-
-  // ---- 腳（成年腳更長）----
-  const legH = isAdult ? 12 : 8;
-  const legY = cy + r*0.85;
-  pxRect(ctx, cx - r*0.4 - 4, legY, 8, legH, PALETTE.feet);
-  pxRect(ctx, cx + r*0.4 - 4, legY, 8, legH, PALETTE.feet);
-  // 爪子
-  if(isAdult){
-    pxRect(ctx, cx - r*0.4 -6, legY+legH, 4, 3, PALETTE.beakDark);
-    pxRect(ctx, cx - r*0.4 +4, legY+legH, 4, 3, PALETTE.beakDark);
-    pxRect(ctx, cx + r*0.4 -6, legY+legH, 4, 3, PALETTE.beakDark);
-    pxRect(ctx, cx + r*0.4 +4, legY+legH, 4, 3, PALETTE.beakDark);
-  }
-
+  // 蛋身（細高橢圓）
+  ctx.save();
+  ctx.scale(1, 1.28);
+  fillPixelCircle(ctx, cx, cy/1.28, 30, '#fff8e0');
   ctx.restore();
 
-  // ---- 裝扮（不隨身體旋轉，畫在最上層）----
-  drawOutfit(ctx, cx, cy - offsetY*0 + offsetY, r, outfit);
+  // 蛋殼紋路
+  pxRect(ctx, cx-4, cy-28, 8, 4, '#e8d8a0');
+  pxRect(ctx, cx+10, cy-18, 5, 4, '#e8d8a0');
+  pxRect(ctx, cx-14, cy-12, 5, 4, '#e8d8a0');
 
-  // ---- 狀態特效（哭泣 / 生病 / 升級星星 / 睡覺Z / 天使光環）----
-  drawStateFx(ctx, cx, cy + offsetY, r, state, frame);
+  // 蛋殼裂紋（快孵化時）
+  if (crack){
+    pxRect(ctx, cx-2, cy-32, 4, 12, '#c8b870');
+    pxRect(ctx, cx+6, cy-28, 4, 8, '#c8b870');
+  }
+
+  // 偶爾眨眼（idle 時每 16 幀閃一次）
+  if (state==='idle'&&frame%16<3){
+    px(ctx, cx-6, cy-4, PALETTE.eyeBlack);
+    px(ctx, cx+6, cy-4, PALETTE.eyeBlack);
+  }
+  ctx.restore();
 }
 
-function drawEyes(ctx, cx, cy, ox, oy, r, mode, frame){
-  const ex1 = cx-ox, ex2 = cx+ox, ey = cy+oy;
-  if (mode === 'closed' || mode === 'happy'){
-    // 瞇眼／開心眼：用一條向上彎的線（以像素矩形堆疊模擬弧線）
-    ['#2b2017'].forEach(c=>{
-      pxRect(ctx, ex1-7, ey, 14, 3, c);
-      pxRect(ctx, ex1-7, ey-3, 3, 3, c);
-      pxRect(ctx, ex1+4, ey-3, 3, 3, c);
-      pxRect(ctx, ex2-7, ey, 14, 3, c);
-      pxRect(ctx, ex2-7, ey-3, 3, 3, c);
-      pxRect(ctx, ex2+4, ey-3, 3, 3, c);
-    });
-    return;
-  }
-  if (mode === 'dead'){
-    pxRect(ctx, ex1-6, ey-2, 12, 4, PALETTE.outline);
-    pxRect(ctx, ex2-6, ey-2, 12, 4, PALETTE.outline);
-    return;
-  }
-  if (mode === 'sick'){
-    // 螺旋暈眩眼：用幾個交錯像素表示
-    [[-6,-6],[ -2,-2],[2,2],[6,-6],[-6,2]].forEach(([dx,dy])=>{
-      px(ctx, ex1+dx, ey+dy, PALETTE.outline);
-      px(ctx, ex2+dx, ey+dy, PALETTE.outline);
-    });
-    return;
-  }
-  // normal / sad：白底黑眼珠
-  fillPixelCircle(ctx, ex1, ey, 8, PALETTE.eyeWhite);
-  fillPixelCircle(ctx, ex2, ey, 8, PALETTE.eyeWhite);
-  const pupilDY = mode === 'sad' ? 3 : 0;
-  fillPixelCircle(ctx, ex1, ey+pupilDY, 4, PALETTE.eyeBlack);
-  fillPixelCircle(ctx, ex2, ey+pupilDY, 4, PALETTE.eyeBlack);
-  if (mode === 'sad'){
-    // 垂下的眉毛
-    pxRect(ctx, ex1-8, ey-10, 14, 3, PALETTE.outline);
-    pxRect(ctx, ex2-6, ey-10, 14, 3, PALETTE.outline);
-  }
+/* ════════════════════════════════════════════════════════
+   🐣 幼雞（Baby）— 超圓超小、毛絨感、大眼睛佔 40% 身體、無雞冠
+   ════════════════════════════════════════════════════════ */
+function drawBaby(ctx, cx, cy, state, frame, outfit, sick){
+  const { offsetY, squash, eyeMode, mouthOpen, tilt } = getMotionParams(state, frame);
+  const r = 22;
+  const bodyColor = sick ? PALETTE.sick : '#ffe87a';
+  ctx.save(); ctx.translate(cx,cy+offsetY); ctx.rotate(tilt*Math.PI/180); ctx.scale(1,squash); ctx.translate(-cx,-(cy+offsetY));
+
+  // 超圓身體（幾乎是正圓）
+  fillPixelCircle(ctx, cx, cy+offsetY, r, bodyColor);
+  // 毛絨感：周圍小突起
+  for(let i=0;i<8;i++){ const a=i/8*Math.PI*2; fillPixelCircle(ctx,cx+Math.cos(a)*r*0.88,cy+offsetY+Math.sin(a)*r*0.88,5,bodyColor); }
+  fillPixelCircle(ctx, cx-r*0.25, cy+offsetY-r*0.3, r*0.5, '#fff3a0');
+
+  // 超大眼睛（佔身體比例非常大）
+  drawEyes(ctx, cx, cy+offsetY, r*0.4, -r*0.08, r, eyeMode, frame);
+  fillPixelCircle(ctx, cx-r*0.45, cy+offsetY+r*0.15, r*0.22, PALETTE.blush);
+  fillPixelCircle(ctx, cx+r*0.45, cy+offsetY+r*0.15, r*0.22, PALETTE.blush);
+
+  // 小橘嘴
+  pxRect(ctx, cx-5, cy+offsetY+r*0.25, 10, mouthOpen?8:5, PALETTE.beak);
+
+  // 小腳（非常小）
+  pxRect(ctx, cx-r*0.5-2, cy+offsetY+r*0.82, 6, 6, PALETTE.feet);
+  pxRect(ctx, cx+r*0.5-4, cy+offsetY+r*0.82, 6, 6, PALETTE.feet);
+
+  ctx.restore();
+  drawStateFx(ctx, cx, cy+offsetY, r, state, frame);
+  if (outfit) drawOutfit(ctx, cx, cy+offsetY, r, outfit);
 }
 
-function drawOutfit(ctx, cx, cy, r, outfit){
-  // ---- 服裝層（身體周圍）----
-  if (outfit.scarf){
-    pxRect(ctx, cx - r*0.6, cy + r*0.55, r*1.2, r*0.3, '#6fc3df');
-  }
-  if (outfit.clothes){
-    pxRect(ctx, cx - r*0.65, cy + r*0.3, r*1.3, r*0.55, '#b08bdb');
-  }
-  if (outfit.tie){
-    pxRect(ctx, cx - 3, cy + r*0.5, 6, r*0.5, '#c2392c');
-    pxRect(ctx, cx - 6, cy + r*0.42, 12, 8, '#e8584a');
-  }
+/* ════════════════════════════════════════════════════════
+   🐤 小雞（Kid）— 標準比例、明黃色、有小翅膀、無雞冠
+   ════════════════════════════════════════════════════════ */
+function drawKid(ctx, cx, cy, state, frame, outfit, sick){
+  const { offsetY, squash, eyeMode, mouthOpen, tilt } = getMotionParams(state, frame);
+  const r = 30;
+  const bodyColor = sick ? PALETTE.sick : PALETTE.bodyMain;
+  ctx.save(); ctx.translate(cx,cy+offsetY); ctx.rotate(tilt*Math.PI/180); ctx.scale(1,squash); ctx.translate(-cx,-(cy+offsetY));
 
-  // ---- 配件層（背包 / 蝴蝶結 / 耳機）----
-  if (outfit.backpack){
-    pxRect(ctx, cx + r*0.55, cy + r*0.1, r*0.4, r*0.55, '#8a5a3b');
-    pxRect(ctx, cx + r*0.6, cy + r*0.05, r*0.28, r*0.14, '#c2392c');
-  }
-  if (outfit.bowtie){
-    pxRect(ctx, cx - 10, cy + r*0.45, 8, 8, '#ff9fb2');
-    pxRect(ctx, cx + 2, cy + r*0.45, 8, 8, '#ff9fb2');
-    pxRect(ctx, cx - 2, cy + r*0.45 + 2, 4, 4, '#e8584a');
-  }
-  if (outfit.headphones){
-    pxRect(ctx, cx - r*0.85, cy - r*0.15, 8, r*0.5, '#2b2017');
-    pxRect(ctx, cx + r*0.85 - 8, cy - r*0.15, 8, r*0.5, '#2b2017');
-    pxRect(ctx, cx - r*0.85, cy - r*0.55, r*1.7, 8, '#2b2017');
-  }
+  // 小翅膀
+  if(outfit?.wings){ fillPixelCircle(ctx,cx-r*0.95,cy+offsetY,r*0.5,'#ffffff'); fillPixelCircle(ctx,cx+r*0.95,cy+offsetY,r*0.5,'#ffffff'); }
+  else { fillPixelCircle(ctx,cx-r*0.82,cy+offsetY+r*0.18,r*0.38,PALETTE.bodyDark); fillPixelCircle(ctx,cx+r*0.82,cy+offsetY+r*0.18,r*0.38,PALETTE.bodyDark); }
 
-  // ---- 眼鏡層 ----
-  if (outfit.glasses){
-    pxRect(ctx, cx - r*0.65, cy - r*0.12, r*0.45, r*0.3, 'rgba(40,40,40,.85)');
-    pxRect(ctx, cx + r*0.2, cy - r*0.12, r*0.45, r*0.3, 'rgba(40,40,40,.85)');
-    pxRect(ctx, cx - r*0.2, cy - r*0.02, r*0.4, 4, PALETTE.outline);
-  }
-
-  // ---- 帽子層（最上層）----
-  if (outfit.hat){
-    pxRect(ctx, cx - r*0.55, cy - r*1.55, r*1.1, r*0.35, '#e8584a');
-    pxRect(ctx, cx - r*0.75, cy - r*1.25, r*1.5, r*0.18, '#c2392c');
-  }
-  if (outfit.crown){
-    pxRect(ctx, cx - r*0.5, cy - r*1.45, r*1.0, r*0.28, '#ffd23f');
-    px(ctx, cx - r*0.4, cy - r*1.6, '#ffd23f');
-    px(ctx, cx,          cy - r*1.68, '#ffd23f');
-    px(ctx, cx + r*0.4, cy - r*1.6, '#ffd23f');
-    px(ctx, cx, cy - r*1.5, '#ff9fb2');
-  }
+  fillPixelCircle(ctx, cx, cy+offsetY, r, bodyColor);
+  fillPixelCircle(ctx, cx-r*0.28, cy+offsetY-r*0.32, r*0.42, PALETTE.bodyLight);
+  fillPixelCircle(ctx, cx-r*0.5, cy+offsetY+r*0.1, r*0.16, PALETTE.blush);
+  fillPixelCircle(ctx, cx+r*0.5, cy+offsetY+r*0.1, r*0.16, PALETTE.blush);
+  drawEyes(ctx, cx, cy+offsetY, r*0.35, -r*0.05, r, eyeMode, frame);
+  pxRect(ctx, cx-6, cy+offsetY+r*0.2, mouthOpen?14:10, mouthOpen?10:6, PALETTE.beak);
+  if(mouthOpen) pxRect(ctx, cx-4, cy+offsetY+r*0.2+4, 8, 4, PALETTE.beakDark);
+  pxRect(ctx, cx-r*0.4-3, cy+offsetY+r*0.84, 7, 7, PALETTE.feet);
+  pxRect(ctx, cx+r*0.4-4, cy+offsetY+r*0.84, 7, 7, PALETTE.feet);
+  ctx.restore();
+  drawStateFx(ctx, cx, cy+offsetY, r, state, frame);
+  if(outfit) drawOutfit(ctx, cx, cy+offsetY, r, outfit);
 }
 
-let particles = [];
-function drawStateFx(ctx, cx, cy, r, state, frame){
-  if (state === 'sad'){
-    if (frame % 8 < 4){
-      pxRect(ctx, cx + r*0.4, cy + r*0.15, 4, 8, PALETTE.tear);
-    }
-  }
-  if (state === 'sick'){
-    pxRect(ctx, cx + r*0.6, cy - r*0.6, 6, 8, '#aee8ff');
-  }
-  if (state === 'sleep'){
-    ctx.font = '12px monospace';
-    ctx.fillStyle = PALETTE.outline;
-    const zy = cy - r - 10 - (frame%8)*2;
-    ctx.fillText('z', cx + r*0.5, zy);
-  }
-  if (state === 'levelup'){
-    for (let i=0;i<5;i++){
-      const a = (frame*0.4 + i*(Math.PI*2/5));
-      const sx = cx + Math.cos(a)*r*1.4;
-      const sy = cy + Math.sin(a)*r*1.4;
-      px(ctx, sx, sy, PALETTE.bodyMain);
-    }
-  }
-  if (state === 'clean'){
-    for (let i=0;i<3;i++){
-      const sy = cy - r - (frame*3 + i*10) % 40;
-      px(ctx, cx - r*0.7 + i*r*0.7, sy, PALETTE.eyeWhite);
-    }
-  }
+/* ════════════════════════════════════════════════════════
+   🐔 青年雞（Teen）— 體型拉長、有雞冠（小）、翅膀更明顯
+   ════════════════════════════════════════════════════════ */
+function drawTeen(ctx, cx, cy, state, frame, outfit, sick){
+  const { offsetY, squash, eyeMode, mouthOpen, tilt } = getMotionParams(state, frame);
+  const r = 36;
+  const bodyColor = sick ? PALETTE.sick : PALETTE.bodyMain;
+  ctx.save(); ctx.translate(cx,cy+offsetY); ctx.rotate(tilt*Math.PI/180); ctx.scale(1,squash); ctx.translate(-cx,-(cy+offsetY));
+
+  // 翅膀
+  if(outfit?.wings){ fillPixelCircle(ctx,cx-r*0.9,cy+offsetY,r*0.52,'#ffffff'); fillPixelCircle(ctx,cx+r*0.9,cy+offsetY,r*0.52,'#ffffff'); }
+  else { pxRect(ctx,cx-r*1.08,cy+offsetY,r*0.5,r*0.6,'#e8a800'); pxRect(ctx,cx+r*0.58,cy+offsetY,r*0.5,r*0.6,'#e8a800'); }
+
+  // 身體（稍微拉長成橢圓）
+  ctx.save(); ctx.scale(1,1.1);
+  fillPixelCircle(ctx, cx, (cy+offsetY)/1.1, r, bodyColor);
+  ctx.restore();
+  fillPixelCircle(ctx, cx-r*0.25, cy+offsetY-r*0.3, r*0.4, PALETTE.bodyLight);
+
+  // 小雞冠
+  pxRect(ctx, cx-8, cy+offsetY-r*1.12, 16, 14, PALETTE.comb);
+  pxRect(ctx, cx-4, cy+offsetY-r*1.22, 8, 8, '#c2392c');
+
+  fillPixelCircle(ctx, cx-r*0.48, cy+offsetY+r*0.1, r*0.17, PALETTE.blush);
+  fillPixelCircle(ctx, cx+r*0.48, cy+offsetY+r*0.1, r*0.17, PALETTE.blush);
+  drawEyes(ctx, cx, cy+offsetY, r*0.35, -r*0.05, r, eyeMode, frame);
+  pxRect(ctx, cx-7, cy+offsetY+r*0.18, mouthOpen?16:12, mouthOpen?11:7, PALETTE.beak);
+  if(mouthOpen) pxRect(ctx, cx-5, cy+offsetY+r*0.18+4, 10, 5, PALETTE.beakDark);
+  pxRect(ctx, cx-r*0.4-4, cy+offsetY+r*0.92, 9, 9, PALETTE.feet);
+  pxRect(ctx, cx+r*0.4-5, cy+offsetY+r*0.92, 9, 9, PALETTE.feet);
+  ctx.restore();
+  drawStateFx(ctx, cx, cy+offsetY, r, state, frame);
+  if(outfit) drawOutfit(ctx, cx, cy+offsetY, r, outfit);
+}
+
+/* ════════════════════════════════════════════════════════
+   🦚 成年雞（Adult）— 最大最飽滿、大雞冠、羽毛紋路
+   ════════════════════════════════════════════════════════ */
+function drawAdult(ctx, cx, cy, state, frame, outfit, sick){
+  const { offsetY, squash, eyeMode, mouthOpen, tilt } = getMotionParams(state, frame);
+  const r = 42;
+  const bodyColor = sick ? PALETTE.sick : PALETTE.bodyMain;
+  ctx.save(); ctx.translate(cx,cy+offsetY); ctx.rotate(tilt*Math.PI/180); ctx.scale(1,squash); ctx.translate(-cx,-(cy+offsetY));
+
+  if(outfit?.wings){ fillPixelCircle(ctx,cx-r*0.9,cy+offsetY,r*0.55,'#ffffff'); fillPixelCircle(ctx,cx+r*0.9,cy+offsetY,r*0.55,'#ffffff'); }
+  else { pxRect(ctx,cx-r*1.1,cy+offsetY-r*0.05,r*0.52,r*0.7,'#e8a800'); pxRect(ctx,cx+r*0.58,cy+offsetY-r*0.05,r*0.52,r*0.7,'#e8a800'); }
+
+  fillPixelCircle(ctx, cx, cy+offsetY, r, bodyColor);
+  fillPixelCircle(ctx, cx-r*0.25, cy+offsetY-r*0.3, r*0.45, PALETTE.bodyLight);
+
+  // 羽毛紋路
+  for(let i=0;i<5;i++){ pxRect(ctx,cx-r*0.5+i*10,cy+offsetY+r*0.35,8,6,PALETTE.bodyDark); }
+
+  // 大雞冠（三瓣）
+  fillPixelCircle(ctx, cx-10, cy+offsetY-r*1.05, 10, PALETTE.comb);
+  fillPixelCircle(ctx, cx,    cy+offsetY-r*1.18, 12, PALETTE.comb);
+  fillPixelCircle(ctx, cx+10, cy+offsetY-r*1.05, 10, PALETTE.comb);
+
+  // 肉垂
+  fillPixelCircle(ctx, cx+4, cy+offsetY+r*0.22, 8, '#c2392c');
+
+  fillPixelCircle(ctx, cx-r*0.48, cy+offsetY+r*0.08, r*0.17, PALETTE.blush);
+  fillPixelCircle(ctx, cx+r*0.48, cy+offsetY+r*0.08, r*0.17, PALETTE.blush);
+  drawEyes(ctx, cx, cy+offsetY, r*0.36, -r*0.06, r, eyeMode, frame);
+  pxRect(ctx, cx-8, cy+offsetY+r*0.16, mouthOpen?18:14, mouthOpen?12:8, PALETTE.beak);
+  if(mouthOpen) pxRect(ctx, cx-6, cy+offsetY+r*0.16+4, 12, 6, PALETTE.beakDark);
+  pxRect(ctx, cx-r*0.42-4, cy+offsetY+r*0.9, 10, 10, PALETTE.feet);
+  pxRect(ctx, cx+r*0.42-6, cy+offsetY+r*0.9, 10, 10, PALETTE.feet);
+  ctx.restore();
+  drawStateFx(ctx, cx, cy+offsetY, r, state, frame);
+  if(outfit) drawOutfit(ctx, cx, cy+offsetY, r, outfit);
+}
+
+/* ════════════════════════════════════════════════════════
+   👴 老雞（Old）— 偏灰白、雞冠下垂、眼睛半閉、步伐緩慢
+   ════════════════════════════════════════════════════════ */
+function drawOldChick(ctx, cx, cy, state, frame, outfit, sick){
+  const { offsetY, squash, eyeMode, mouthOpen, tilt } = getMotionParams(state, frame);
+  const r = 37;
+  const bodyColor = sick ? PALETTE.sick : '#e8d090'; // 偏米白灰
+  ctx.save(); ctx.translate(cx,cy+offsetY); ctx.rotate(tilt*Math.PI/180); ctx.scale(1,squash); ctx.translate(-cx,-(cy+offsetY));
+
+  if(outfit?.wings){ fillPixelCircle(ctx,cx-r*0.9,cy+offsetY,r*0.5,'#ffffff'); fillPixelCircle(ctx,cx+r*0.9,cy+offsetY,r*0.5,'#ffffff'); }
+  else { pxRect(ctx,cx-r*1.05,cy+offsetY,r*0.48,r*0.6,'#c8a860'); pxRect(ctx,cx+r*0.57,cy+offsetY,r*0.48,r*0.6,'#c8a860'); }
+
+  fillPixelCircle(ctx, cx, cy+offsetY, r, bodyColor);
+  fillPixelCircle(ctx, cx-r*0.22, cy+offsetY-r*0.28, r*0.4, '#f5eecc');
+
+  // 下垂雞冠（老化後向右傾斜）
+  pxRect(ctx, cx-4, cy+offsetY-r*1.05, 12, 12, '#c05050');
+  pxRect(ctx, cx+4, cy+offsetY-r*1.0, 10, 8, '#c05050');
+
+  // 皺紋線條
+  pxRect(ctx, cx-r*0.3, cy+offsetY-r*0.22, 6, 2, '#c8a860');
+  pxRect(ctx, cx+r*0.18, cy+offsetY-r*0.22, 6, 2, '#c8a860');
+
+  // 老雞眼睛預設半閉（覆寫 eyeMode 為 closed 除非特殊狀態）
+  const oldEyeMode = (eyeMode==='normal') ? 'closed' : eyeMode;
+  fillPixelCircle(ctx, cx-r*0.46, cy+offsetY+r*0.08, r*0.16, PALETTE.blush);
+  fillPixelCircle(ctx, cx+r*0.46, cy+offsetY+r*0.08, r*0.16, PALETTE.blush);
+  drawEyes(ctx, cx, cy+offsetY, r*0.35, -r*0.06, r, oldEyeMode, frame);
+  pxRect(ctx, cx-6, cy+offsetY+r*0.18, mouthOpen?14:10, mouthOpen?9:6, '#d4884a');
+  pxRect(ctx, cx-r*0.38-3, cy+offsetY+r*0.88, 8, 8, '#d4884a');
+  pxRect(ctx, cx+r*0.38-5, cy+offsetY+r*0.88, 8, 8, '#d4884a');
+  ctx.restore();
+  drawStateFx(ctx, cx, cy+offsetY, r, state, frame);
+  if(outfit) drawOutfit(ctx, cx, cy+offsetY, r, outfit);
 }
 
 /* ---- 天使動畫（死亡後彈出視窗使用獨立小畫布） ---- */
@@ -1067,6 +1064,505 @@ const RANDOM_EVENTS = [
   { text:'🌦️ 天氣變化，活力受到影響。', fn:()=>{ GameState.energy = clamp(GameState.energy-10); } },
 ];
 
+/* ============================================================================
+   8.5. MiniGameSystem — 四款可玩的像素小遊戲
+   ----------------------------------------------------------------------------
+   架構：MiniGameSystem 是所有小遊戲的統一管理器，負責：
+   - showMenu()：彈出遊戲選單讓玩家選擇
+   - launch(id)：啟動指定遊戲（初始化 Canvas、鎖定主遊戲輸入、啟動 RAF 迴圈）
+   - finish(result)：統一結算（計算金幣/飽食/心情獎勵、寫入日記、解除輸入鎖）
+   每款遊戲是一個獨立的 object，實作 { start, stop, handleInput } 介面。
+   ============================================================================ */
+const MiniGameSystem = (() => {
+  /* ---- DOM refs ---- */
+  let overlay, mgCanvas, mgCtx, hud, quitBtn, resultDiv, resultTitle, resultMsg, resultReward, resultClose;
+  let currentGame = null;
+  let rafId = null;
+  let inputLocked = false;     // 主遊戲輸入鎖（小遊戲進行中封鎖主界面按鈕點擊）
+  let wheelUsedToday = null;   // 幸運轉盤每日限一次
+
+  function init(){
+    overlay      = document.getElementById('mg-overlay');
+    mgCanvas     = document.getElementById('mg-canvas');
+    mgCtx        = mgCanvas.getContext('2d');
+    mgCtx.imageSmoothingEnabled = false;
+    hud          = document.getElementById('mg-hud');
+    quitBtn      = document.getElementById('mg-quit-btn');
+    resultDiv    = document.getElementById('mg-result');
+    resultTitle  = document.getElementById('mg-result-title');
+    resultMsg    = document.getElementById('mg-result-msg');
+    resultReward = document.getElementById('mg-result-reward');
+    resultClose  = document.getElementById('mg-result-close');
+
+    // 依可視視窗調整 canvas 尺寸（保持正方形 / 填滿短邊）
+    const side = Math.min(window.innerWidth, window.innerHeight, 420);
+    mgCanvas.width  = side;
+    mgCanvas.height = side;
+
+    quitBtn.addEventListener('click', () => finish(null));
+    resultClose.addEventListener('click', () => {
+      resultDiv.classList.add('hidden');
+      hide();
+    });
+    document.querySelectorAll('.mg-select').forEach(btn => {
+      btn.addEventListener('click', () => {
+        UI.closeModal('minigame-menu-modal');
+        launch(btn.dataset.game);
+      });
+    });
+  }
+
+  function showMenu(){
+    UI.openModal('minigame-menu-modal');
+  }
+
+  function launch(id){
+    overlay.classList.remove('hidden');
+    inputLocked = true;
+    if (rafId){ cancelAnimationFrame(rafId); rafId = null; }
+    // 移除舊的翻牌 DOM grid（如有殘留）
+    const oldGrid = document.getElementById('mg-memory-grid');
+    if (oldGrid) oldGrid.remove();
+
+    switch(id){
+      case 'catchfood': currentGame = CatchFoodGame; break;
+      case 'bughunt':   currentGame = BugHuntGame;   break;
+      case 'memory':    currentGame = MemoryGame;    break;
+      case 'wheel':     currentGame = WheelGame;     break;
+      default: return;
+    }
+    currentGame.start(mgCanvas, mgCtx, hud, () => finish(currentGame.getResult()));
+    const loop = () => {
+      if (!currentGame || currentGame.done) return;
+      currentGame.update();
+      currentGame.render(mgCtx);
+      rafId = requestAnimationFrame(loop);
+    };
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function finish(result){
+    if (rafId){ cancelAnimationFrame(rafId); rafId = null; }
+    if (currentGame){ currentGame.stop(); currentGame = null; }
+    inputLocked = false;
+    // 移除翻牌 DOM grid
+    const oldGrid = document.getElementById('mg-memory-grid');
+    if (oldGrid) oldGrid.remove();
+
+    if (!result){ hide(); return; }
+
+    // 套用獎勵
+    if (result.gold)      GameState.addGold(result.gold);
+    if (result.hunger)    GameState.hunger  = clamp(GameState.hunger  + result.hunger);
+    if (result.happy)     GameState.happy   = clamp(GameState.happy   + result.happy);
+    if (result.happyPen)  GameState.happy   = clamp(GameState.happy   + result.happyPen);
+
+    const rewardParts = [];
+    if (result.gold > 0)  rewardParts.push(`+${result.gold} 💰`);
+    if (result.hunger > 0) rewardParts.push(`+${result.hunger} 🍗`);
+    if (result.happy > 0)  rewardParts.push(`+${result.happy} 😊`);
+
+    GameState.addDiary('minigame', result.gameName, result.summary + (rewardParts.length ? ` 獎勵：${rewardParts.join(' ')}` : ''));
+    GameState.markDirty();
+    UI.updateStats();
+
+    resultTitle.textContent  = result.gameName;
+    resultMsg.textContent    = result.summary;
+    resultReward.textContent = rewardParts.length ? `獲得：${rewardParts.join('  ')}` : '這次沒有獎勵...';
+    resultDiv.classList.remove('hidden');
+  }
+
+  function hide(){
+    overlay.classList.add('hidden');
+    mgCtx.clearRect(0, 0, mgCanvas.width, mgCanvas.height);
+    hud.textContent = '';
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+
+  return { showMenu, launch, finish, isLocked: () => inputLocked };
+})();
+
+/* ============================================================================
+   🍗 GAME 1：接飼料《飢餓大作戰》
+   小雞左右移動，接住從天而降的食物，避開腐壞食物。
+   操作：觸控左/右半邊點擊 或 鍵盤 ←→
+   ============================================================================ */
+const CatchFoodGame = (() => {
+  let W, H, ctx, done, resultData, endCb, hud;
+  let chickX, chickSpeed, score, misses, timeLeft, startT, lastT;
+  let items = [], spawnTimer = 0;
+  const GOOD  = ['🌽','🥚','🌾','🍠','🥕'];
+  const BAD   = ['🦠','💀','🤢'];
+  let keys = { left:false, right:false };
+  let touchX = null;
+
+  function start(canvas, c, hudEl, cb){
+    W=canvas.width; H=canvas.height; ctx=c; hud=hudEl; endCb=cb;
+    done=false; score=0; misses=0; timeLeft=30; startT=performance.now(); lastT=startT;
+    chickX=W/2; chickSpeed=W/160;
+    items=[]; spawnTimer=0; resultData=null;
+    hud.textContent='⏱️ 30  🌽 0';
+
+    const onKey = (e) => {
+      if (e.type==='keydown'){ if(e.key==='ArrowLeft') keys.left=true; if(e.key==='ArrowRight') keys.right=true; }
+      else { if(e.key==='ArrowLeft') keys.left=false; if(e.key==='ArrowRight') keys.right=false; }
+    };
+    const onTouch = (e) => { touchX = e.touches[0]?.clientX ?? null; };
+    const onTouchEnd = () => { touchX = null; };
+    document.addEventListener('keydown', onKey); document.addEventListener('keyup', onKey);
+    canvas.addEventListener('touchstart', onTouch, {passive:true});
+    canvas.addEventListener('touchmove', onTouch, {passive:true});
+    canvas.addEventListener('touchend', onTouchEnd);
+    CatchFoodGame._cleanup = () => {
+      document.removeEventListener('keydown', onKey); document.removeEventListener('keyup', onKey);
+      canvas.removeEventListener('touchstart', onTouch);
+      canvas.removeEventListener('touchmove', onTouch);
+      canvas.removeEventListener('touchend', onTouchEnd);
+    };
+  }
+
+  function update(){
+    if (done) return;
+    const now = performance.now();
+    const dt = Math.min((now - lastT)/1000, 0.1);
+    lastT = now;
+    timeLeft = Math.max(0, 30 - (now - startT)/1000);
+    if (timeLeft <= 0){ endGame(); return; }
+
+    // 小雞移動
+    const speed = chickSpeed * W;
+    if (keys.left) chickX = Math.max(24, chickX - speed * dt * 60);
+    if (keys.right) chickX = Math.min(W-24, chickX + speed * dt * 60);
+    if (touchX !== null){
+      const rect = ctx.canvas.getBoundingClientRect();
+      const tx = (touchX - rect.left) * (W / rect.width);
+      chickX += (tx - chickX) * 0.18;
+      chickX = clamp(chickX, 24, W-24);
+    }
+
+    // 生成食物
+    spawnTimer -= dt;
+    if (spawnTimer <= 0){
+      spawnTimer = rand(0.4, 1.2);
+      const isBad = Math.random() < 0.25;
+      items.push({ x: rand(20, W-20), y: -20, speed: rand(H/5, H/3), emoji: isBad ? choice(BAD) : choice(GOOD), bad:isBad });
+    }
+
+    // 更新食物位置 + 碰撞
+    items = items.filter(it => {
+      it.y += it.speed * dt;
+      if (it.y > H - 44 && Math.abs(it.x - chickX) < 36){
+        if (it.bad){ score = Math.max(0, score-5); } else { score += 10; }
+        return false;
+      }
+      if (it.y > H + 10){ if (!it.bad) misses++; return false; }
+      return true;
+    });
+    if (misses >= 5){ endGame(); return; }
+    hud.textContent = `⏱️ ${Math.ceil(timeLeft)}  🌽 ${score}  💔 ${misses}/5`;
+  }
+
+  function render(c){
+    c.clearRect(0,0,W,H);
+    // 背景
+    pxRect(c,0,0,W,H*0.65,'#bfe9ff');
+    pxRect(c,0,H*0.65,W,H*0.35,'#8fcf6a');
+    pxRect(c,0,H-44,W,4,'#6fae5a');
+
+    // 食物
+    const efs = Math.round(W/13);
+    c.font=`${efs}px serif`; c.textAlign='center'; c.textBaseline='middle';
+    items.forEach(it => c.fillText(it.emoji, it.x, it.y));
+
+    // 小雞（直接用 pxRect 畫簡易像素小雞，精確定位在 chickX）
+    const cy = H - 40;
+    const bob = Math.sin(performance.now()/200)*3;
+    fillPixelCircle(c, chickX, cy+bob, 20, '#ffd23f');
+    fillPixelCircle(c, chickX-5, cy-12+bob, 12, '#ffe87a');
+    fillPixelCircle(c, chickX-8, cy+4+bob, 8, '#e8a800');
+    fillPixelCircle(c, chickX+8, cy+4+bob, 8, '#e8a800');
+    pxRect(c, chickX-4, cy+6+bob, 8, 5, '#ff8c3b');
+    fillPixelCircle(c, chickX-7, cy-2+bob, 4, '#2b2017');
+    fillPixelCircle(c, chickX+3, cy-2+bob, 4, '#2b2017');
+    fillPixelCircle(c, chickX-6, cy+14+bob, 5, '#ff8c3b');
+    fillPixelCircle(c, chickX+2, cy+14+bob, 5, '#ff8c3b');
+  }
+
+  function endGame(){
+    if (done) return; done=true;
+    const coins = Math.floor(score/5);
+    const hungerGain = Math.min(25, Math.floor(score/4));
+    const summary = score >= 80 ? '小雞吃得超級滿足！肚子圓滾滾的～' :
+                    score >= 30 ? '還可以，小雞勉強填飽肚子。' :
+                                  '小雞還是餓著肚子……下次要加油！';
+    resultData = { gameName:'接飼料', gold:coins, hunger:hungerGain, happy:5, happyPen:0, summary };
+    if (endCb) endCb();
+  }
+
+  function stop(){ if (CatchFoodGame._cleanup) CatchFoodGame._cleanup(); keys={left:false,right:false}; touchX=null; }
+  function getResult(){ return resultData; }
+
+  return { start, update, render, stop, getResult, get done(){ return done; } };
+})();
+
+/* ============================================================================
+   🐛 GAME 2：抓蟲大作戰
+   點擊畫面上的蟲子，好蟲加分、毒蟲扣心情，30秒結算。
+   ============================================================================ */
+const BugHuntGame = (() => {
+  let W, H, ctx, done, resultData, endCb, hud;
+  let bugs=[], score=0, penalty=0, timeLeft, startT;
+  const GOOD_BUGS = ['🪱','🐛','🦗'];
+  const BAD_BUGS  = ['💀','🦟','🕷️'];
+
+  function spawnBug(){
+    const isBad = Math.random() < 0.30;
+    bugs.push({ x:rand(28,W-28), y:rand(60,H-60), emoji: isBad?choice(BAD_BUGS):choice(GOOD_BUGS), bad:isBad, ttl:rand(1.5,3.2), age:0, scale:1 });
+  }
+
+  function start(canvas, c, hudEl, cb){
+    W=canvas.width; H=canvas.height; ctx=c; hud=hudEl; endCb=cb;
+    done=false; score=0; penalty=0; timeLeft=30; startT=performance.now(); bugs=[];
+    for(let i=0;i<5;i++) spawnBug();
+    hud.textContent='🐛 0  ☠️ 0  ⏱️ 30';
+    const onClick = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const mx = (e.clientX ?? e.touches?.[0]?.clientX ?? 0) - rect.left;
+      const my = (e.clientY ?? e.touches?.[0]?.clientY ?? 0) - rect.top;
+      const scale = W / rect.width;
+      const bx = mx*scale, by = my*scale;
+      for(let i=bugs.length-1;i>=0;i--){
+        const b=bugs[i];
+        if(Math.abs(bx-b.x)<28&&Math.abs(by-b.y)<28){
+          if(b.bad){ penalty++; } else { score+=10; }
+          bugs.splice(i,1);
+          spawnBug();
+          break;
+        }
+      }
+    };
+    canvas.addEventListener('click', onClick);
+    canvas.addEventListener('touchstart', onClick, {passive:true});
+    BugHuntGame._cleanup = () => { canvas.removeEventListener('click', onClick); canvas.removeEventListener('touchstart', onClick); };
+  }
+
+  function update(){
+    if(done) return;
+    const now = performance.now();
+    timeLeft = Math.max(0, 30-(now-startT)/1000);
+    if(timeLeft<=0){ endGame(); return; }
+    const dt = 1/60;
+    bugs.forEach(b => { b.age+=dt; b.scale = 1 + Math.sin(b.age*4)*0.08; });
+    bugs = bugs.filter(b => { if(b.age>=b.ttl){ spawnBug(); return false; } return true; });
+    hud.textContent=`🐛 ${score}  ☠️ ${penalty}  ⏱️ ${Math.ceil(timeLeft)}`;
+  }
+
+  function render(c){
+    c.clearRect(0,0,W,H);
+    pxRect(c,0,0,W,H,'#c8e8b0');
+    for(let i=0;i<12;i++) fillPixelCircle(c,(i*83)%W,(i*61)%H+20,8,'#a8cc88');
+    c.textAlign='center'; c.textBaseline='middle';
+    bugs.forEach(b => {
+      const fs = Math.round(W/11 * b.scale);
+      c.font=`${fs}px serif`;
+      c.fillText(b.emoji, b.x, b.y);
+    });
+  }
+
+  function endGame(){
+    if(done) return; done=true;
+    const coins = Math.floor(score/4);
+    const summary = score>=80 ? '抓得超厲害！小雞吃得非常飽！' :
+                    score>=30 ? '還不錯，小雞抓到了一些食物。' :
+                                '小雞抓蟲不太熟練……';
+    resultData = { gameName:'抓蟲大作戰', gold:coins, hunger:Math.min(15,Math.floor(score/6)), happy: score>30?8:-5, happyPen: penalty*3>0?-penalty*3:0, summary };
+    if(endCb) endCb();
+  }
+  function stop(){ if(BugHuntGame._cleanup) BugHuntGame._cleanup(); }
+  function getResult(){ return resultData; }
+  return { start, update, render, stop, getResult, get done(){ return done; } };
+})();
+
+/* ============================================================================
+   🃏 GAME 3：翻牌記憶《小雞記憶挑戰》
+   4×4 DOM 翻牌，找出 8 對相同圖案，步數越少分越高。
+   ============================================================================ */
+const MemoryGame = (() => {
+  let done, resultData, endCb, hud, steps, matched, firstCard, locked;
+  const PAIRS = ['🐥','🥚','🌽','🌻','🍓','🥕','🌾','🦋'];
+
+  function start(canvas, c, hudEl, cb){
+    hud=hudEl; endCb=cb; done=false; resultData=null; steps=0; matched=0; firstCard=null; locked=false;
+    hud.textContent='🃏 步數 0 / 配對 0/8';
+
+    // 建立 DOM 網格覆蓋在 mg-overlay 上
+    const grid = document.createElement('div');
+    grid.id='mg-memory-grid';
+    document.getElementById('mg-overlay').appendChild(grid);
+
+    const shuffled = [...PAIRS, ...PAIRS].sort(()=>Math.random()-0.5);
+    shuffled.forEach((emoji, i) => {
+      const card = document.createElement('div');
+      card.className='mg-card hidden-face';
+      card.dataset.emoji = emoji;
+      card.dataset.idx = i;
+      card.addEventListener('click', () => onCardClick(card, emoji));
+      grid.appendChild(card);
+    });
+    c.clearRect(0,0,canvas.width,canvas.height);
+    pxRect(c,0,0,canvas.width,canvas.height,'#2b2017');
+  }
+
+  function onCardClick(card, emoji){
+    if(locked||done||card.classList.contains('matched')||card.classList.contains('flipped')) return;
+    card.classList.remove('hidden-face'); card.classList.add('flipped'); card.textContent=emoji;
+    if(!firstCard){ firstCard=card; return; }
+    steps++;
+    if(firstCard.dataset.emoji === emoji && firstCard !== card){
+      firstCard.classList.add('matched'); card.classList.add('matched');
+      matched++; firstCard=null;
+      hud.textContent=`🃏 步數 ${steps} / 配對 ${matched}/8`;
+      if(matched>=8) endGame();
+    } else {
+      locked=true;
+      const prev=firstCard; firstCard=null;
+      setTimeout(()=>{
+        prev.classList.remove('flipped'); prev.classList.add('hidden-face'); prev.textContent='';
+        card.classList.remove('flipped'); card.classList.add('hidden-face'); card.textContent='';
+        locked=false;
+        hud.textContent=`🃏 步數 ${steps} / 配對 ${matched}/8`;
+      }, 700);
+    }
+  }
+
+  function endGame(){
+    if(done) return; done=true;
+    const coins = steps<=18 ? 30 : steps<=28 ? 15 : 5;
+    const summary = steps<=18 ? '小雞驚訝地發現你比牠還會記東西！' :
+                    steps<=28 ? '還不錯，小雞開始記得一些東西了。' :
+                                '小雞忘光光了……但牠還是很努力！';
+    resultData = { gameName:'翻牌記憶', gold:coins, hunger:0, happy:10, happyPen:0, summary };
+    if(endCb) endCb();
+  }
+
+  function update(){} // DOM 驅動，不需要 RAF update
+  function render(){} // DOM 驅動，不需要 Canvas render
+  function stop(){ const g=document.getElementById('mg-memory-grid'); if(g) g.remove(); }
+  function getResult(){ return resultData; }
+  return { start, update, render, stop, getResult, get done(){ return done; } };
+})();
+
+/* ============================================================================
+   🎡 GAME 4：幸運轉盤（每日一轉）
+   CSS/Canvas 動畫轉盤，停下來後給予隨機獎勵或負面事件。
+   ============================================================================ */
+const WheelGame = (() => {
+  let W, H, ctx, done, resultData, endCb, hud;
+  let angle=0, spinning=false, speed=0, targetSegment=-1, decelStart=0, started=false;
+  const SEGMENTS = [
+    { label:'+50 💰', color:'#ffd23f', reward:{ gold:50 } },
+    { label:'+飼料', color:'#b6e3a1', reward:{ hunger:20 } },
+    { label:'+20 💰', color:'#6fc3df', reward:{ gold:20 } },
+    { label:'😊+心情', color:'#ff9fb2', reward:{ happy:25 } },
+    { label:'☁️ 沒事', color:'#c9c9c9', reward:{} },
+    { label:'💊 藥品', color:'#b08bdb', reward:{ inv_medicine:1 } },
+    { label:'-心情', color:'#e8584a', reward:{ happy:-20 } },
+    { label:'+100 💰', color:'#ffd23f', reward:{ gold:100 } },
+  ];
+  const N = SEGMENTS.length;
+  const SEG = Math.PI*2/N;
+
+  function start(canvas, c, hudEl, cb){
+    W=canvas.width; H=canvas.height; ctx=c; hud=hudEl; endCb=cb;
+    done=false; resultData=null; spinning=false; speed=0; started=false; angle=0;
+
+    const today = new Date().toDateString();
+    if (WheelGame.usedDay === today){
+      hud.textContent='今天已經轉過了，明天再來！';
+      resultData={ gameName:'幸運轉盤', gold:0, hunger:0, happy:0, happyPen:0, summary:'今天已經轉過幸運轉盤了，明天再來！' };
+      done=true; if(endCb) setTimeout(endCb,1500); return;
+    }
+    hud.textContent='點擊轉盤開始旋轉！';
+    canvas.addEventListener('click', onSpin);
+    WheelGame._cleanup = () => canvas.removeEventListener('click', onSpin);
+  }
+
+  function onSpin(){
+    if(spinning||started) return;
+    spinning=true; started=true;
+    speed = rand(8, 14);
+    targetSegment = randInt(0, N-1);
+    const targetAngle = -targetSegment*SEG - SEG/2 + Math.PI*2*randInt(3,6);
+    decelStart = performance.now() + 1200;
+    WheelGame._target = targetAngle;
+    WheelGame._startSpeed = speed;
+  }
+
+  function update(){
+    if(!spinning||done) return;
+    const now = performance.now();
+    if(now < decelStart){
+      angle += speed * 0.04;
+    } else {
+      speed = Math.max(0, speed * 0.975);
+      angle += speed * 0.04;
+      if(speed < 0.04){ settle(); }
+    }
+  }
+
+  function settle(){
+    spinning=false; done=true;
+    const seg = SEGMENTS[targetSegment];
+    WheelGame.usedDay = new Date().toDateString();
+    const r = seg.reward;
+    if(r.gold) GameState.addGold(r.gold);
+    if(r.hunger) GameState.hunger = clamp(GameState.hunger + r.hunger);
+    if(r.happy)  GameState.happy  = clamp(GameState.happy  + r.happy);
+    if(r.inv_medicine) GameState.inventory.medicine = (GameState.inventory.medicine||0)+1;
+    const summary = `轉盤停在「${seg.label}」！`;
+    resultData={ gameName:'幸運轉盤', gold:r.gold||0, hunger:r.hunger||0, happy:Math.max(0,r.happy||0), happyPen:Math.min(0,r.happy||0), summary };
+    if(endCb) setTimeout(endCb, 800);
+  }
+
+  function render(c){
+    c.clearRect(0,0,W,H);
+    pxRect(c,0,0,W,H,'#2b2017');
+    const cx=W/2, cy=H/2, r=Math.min(W,H)*0.38;
+    // 轉盤扇形
+    SEGMENTS.forEach((seg,i) => {
+      const start=angle+i*SEG, end=start+SEG;
+      c.beginPath(); c.moveTo(cx,cy);
+      c.arc(cx,cy,r,start,end); c.closePath();
+      c.fillStyle=seg.color; c.fill();
+      c.strokeStyle='#2b2017'; c.lineWidth=3; c.stroke();
+      // 文字
+      c.save();
+      c.translate(cx,cy);
+      c.rotate(start+SEG/2);
+      c.fillStyle='#2b2017'; c.font=`bold ${Math.round(r/8)}px monospace`;
+      c.textAlign='right'; c.textBaseline='middle';
+      c.fillText(seg.label, r*0.88, 0);
+      c.restore();
+    });
+    // 中心圓
+    c.beginPath(); c.arc(cx,cy,r*0.12,0,Math.PI*2);
+    c.fillStyle='#fff8e0'; c.fill(); c.strokeStyle='#2b2017'; c.lineWidth=3; c.stroke();
+    // 指針
+    c.beginPath();
+    c.moveTo(cx, cy-r-8);
+    c.lineTo(cx-12, cy-r+16);
+    c.lineTo(cx+12, cy-r+16);
+    c.closePath();
+    c.fillStyle='#e8584a'; c.fill();
+    c.strokeStyle='#2b2017'; c.lineWidth=2; c.stroke();
+  }
+
+  function stop(){ if(WheelGame._cleanup) WheelGame._cleanup(); }
+  function getResult(){ return resultData; }
+  return { start, update, render, stop, getResult, get done(){ return done; } };
+})();
+
 function scheduleRandomEvent(){
   const delay = randInt(60, 180) * 1000;
   setTimeout(() => {
@@ -1203,6 +1699,14 @@ const UI = {
     this.bindButtons();
     this.bindModals();
     this.bindBgSwitcher();
+
+    // 捲動到底時隱藏右側 ▶ 提示
+    const bar = document.getElementById('action-bar');
+    const wrap = document.getElementById('action-bar-wrap');
+    bar.addEventListener('scroll', () => {
+      const atEnd = bar.scrollLeft + bar.clientWidth >= bar.scrollWidth - 4;
+      wrap.classList.toggle('scrolled-end', atEnd);
+    });
     document.getElementById('name-input').value = GameState.name;
     document.getElementById('chick-name').textContent = GameState.name;
     document.getElementById('sfx-toggle').checked = GameState.settings.sfx;
@@ -1211,12 +1715,10 @@ const UI = {
       fps: 8,
       frameCount: 8,
       draw: (frame) => {
-        const stageInfo = STAGES.find(s => s.key === GameState.stage) || STAGES[1];
         const params = {
           state: this.activeState(),
           frame,
-          stageScale: stageInfo.scale,
-          stageKey: GameState.stage,
+          stage: GameState.stage,   // 傳入 stage key，由 drawChick 分發到對應繪製函式
           outfit: GameState.outfit,
           sick: GameState.health < 20,
         };
@@ -1254,7 +1756,10 @@ const UI = {
         switch(action){
           case 'feed': GameState.feed(); break;
           case 'water': GameState.water(); break;
-          case 'play': GameState.play(); break;
+          case 'play':
+            if (!GameState.alive){ UI.toast('😇 小雞已經去了天堂...'); return; }
+            if (GameState.energy < 5){ UI.toast('😩 活力太低了，先補充能量再玩！'); return; }
+            MiniGameSystem.showMenu(); return;
           case 'bath': GameState.bath(); break;
           case 'sleep': GameState.sleepToggle(); break;
           case 'doctor': GameState.doctor(); break;
