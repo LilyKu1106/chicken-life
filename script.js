@@ -45,12 +45,12 @@ const PALETTE = {
 };
 
 const STAGES = [
-  { key:'egg',   label:'蛋',     minAge:-1, scale:0.5 },
-  { key:'baby',  label:'幼雞',   minAge:0,  scale:0.6 },
-  { key:'kid',   label:'小雞',   minAge:1,  scale:0.8 },
-  { key:'teen',  label:'青年雞', minAge:3,  scale:1.0 },
-  { key:'adult', label:'成年雞', minAge:7,  scale:1.15 },
-  { key:'old',   label:'老雞',   minAge:15, scale:1.05 },
+  { key:'egg',   label:'蛋',     minAge: 0,    scale:0.5 },   // 0 天剛出生就是蛋
+  { key:'baby',  label:'幼雞',   minAge: 0.05, scale:0.6 },   // 約 3 現實秒後破蛋
+  { key:'kid',   label:'小雞',   minAge: 1,    scale:0.8 },
+  { key:'teen',  label:'青年雞', minAge: 3,    scale:1.0 },
+  { key:'adult', label:'成年雞', minAge: 7,    scale:1.15 },
+  { key:'old',   label:'老雞',   minAge: 15,   scale:1.05 },
 ];
 
 const DAY_LENGTH_MS = 60 * 1000;     // 遊戲內：現實 60 秒 = 1 天（方便展示成長系統）
@@ -167,13 +167,46 @@ const chickCanvas = document.getElementById('chick-canvas');
 const chickCtx = chickCanvas.getContext('2d');
 chickCtx.imageSmoothingEnabled = false;
 
-/** 將 canvas 內部解析度設定為固定值，CSS 再用 100% 撐滿，達到清晰縮放 */
-function fitCanvas(canvas){
-  canvas.width = 320;
-  canvas.height = 180;
+/**
+ * 讓 canvas 的內部繪製解析度符合 #scene div 的實際像素尺寸。
+ * 呼叫時機：初始化時 + 視窗尺寸改變時（ResizeObserver）。
+ * 這樣無論場景是橫式（桌機）還是直式（手機），
+ * canvas 的座標空間都和顯示空間一致，不會拉伸也不需要 letterbox。
+ */
+function fitCanvasToScene(){
+  const scene = document.getElementById('scene');
+  if (!scene) return;
+  // devicePixelRatio 讓高密度螢幕（Retina/HDPI）也能清晰顯示
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const W = Math.floor(scene.clientWidth  * dpr);
+  const H = Math.floor(scene.clientHeight * dpr);
+  if (W < 10 || H < 10) return;
+  [chickCanvas,
+   document.getElementById('bg-canvas'),
+   document.getElementById('weather-canvas')
+  ].forEach(c => {
+    if (!c) return;
+    if (c.width !== W || c.height !== H){
+      c.width  = W;
+      c.height = H;
+      // imageSmoothingEnabled 在 resize 後會重置，需要重新關閉
+      const ctx = c.getContext('2d');
+      if (ctx) ctx.imageSmoothingEnabled = false;
+    }
+    // CSS 顯示尺寸固定為場景實際 CSS 大小（undoing dpr scaling for display）
+    c.style.width  = scene.clientWidth  + 'px';
+    c.style.height = scene.clientHeight + 'px';
+  });
 }
-fitCanvas(chickCanvas);
-fitCanvas(document.getElementById('bg-canvas'));
+
+// 初始呼叫（DOMContentLoaded 之後、UI.init 之前可能 scene 還沒尺寸，
+// 所以也在 startGameLoop 裡再呼叫一次確保正確）
+function fitCanvas(canvas){ /* 舊介面保留，讓呼叫端不報錯 */ }
+// 視窗 resize 時重新 fit
+window.addEventListener('resize', () => {
+  fitCanvasToScene();
+  drawBackground(GameState.background);
+});
 
 /**
 /**
@@ -570,14 +603,15 @@ const WEATHER_CYCLE_MS = 3 * 60 * 1000; // 每 3 分鐘現實時間切換一次
 const weatherCanvas = document.getElementById('weather-canvas');
 const weatherCtx = weatherCanvas.getContext('2d');
 weatherCtx.imageSmoothingEnabled = false;
-fitCanvas(weatherCanvas);
+// fitCanvasToScene() will size this along with the others on first render
 
-// 預先產生固定的粒子種子（位置/速度/長度），每幀只依時間推算位置，避免每幀重新亂數造成閃爍
+// 粒子種子使用 0–1 的相對比例，乘以實際 canvas 尺寸時再換算，
+// 這樣 resize 後粒子位置自動正確，不會全部擠在左上角的 320x180 範圍內。
 const rainParticles = Array.from({length:44}, () => ({
-  x: rand(0,320), y: rand(0,180), speed: rand(220,340), len: rand(8,16),
+  xR: Math.random(), yR: Math.random(), speed: rand(220,340), len: rand(8,16),
 }));
 const snowParticles = Array.from({length:34}, () => ({
-  x: rand(0,320), y: rand(0,180), speed: rand(24,50), drift: rand(0.5,1.5), phase: rand(0,Math.PI*2),
+  xR: Math.random(), yR: Math.random(), speed: rand(24,50), drift: rand(0.5,1.5), phase: rand(0,Math.PI*2),
 }));
 let lastLightning = 0;
 
@@ -588,20 +622,21 @@ function drawWeather(t){
 
   if (w === 'rain' || w === 'storm'){
     weatherCtx.strokeStyle = 'rgba(180,220,255,0.55)';
-    weatherCtx.lineWidth = 2;
+    weatherCtx.lineWidth = Math.max(1, W/160);
     rainParticles.forEach(p => {
-      const y = (p.y + (t/1000)*p.speed) % (H+20) - 20;
+      const x = p.xR * W;
+      const y = (p.yR * H + (t/1000)*p.speed) % (H+20) - 20;
       weatherCtx.beginPath();
-      weatherCtx.moveTo(p.x, y);
-      weatherCtx.lineTo(p.x - 3, y + p.len);
+      weatherCtx.moveTo(x, y);
+      weatherCtx.lineTo(x - 3, y + p.len);
       weatherCtx.stroke();
     });
   }
 
   if (w === 'snow'){
     snowParticles.forEach(p => {
-      const y = (p.y + (t/1000)*p.speed) % (H+10) - 10;
-      const x = p.x + Math.sin(t/600 + p.phase) * 10 * p.drift;
+      const y = (p.yR * H + (t/1000)*p.speed) % (H+10) - 10;
+      const x = p.xR * W + Math.sin(t/600 + p.phase) * 10 * p.drift;
       px(weatherCtx, x, y, 'rgba(255,255,255,0.9)');
     });
   }
@@ -688,7 +723,7 @@ const GameState = {
   weight: 50,
   hunger: 80, happy: 80, health: 100, energy: 80, clean: 80, sleepStat: 80,
   isSleeping: false,
-  stage: 'baby',
+  stage: 'egg',
   background: 'room',
   weather: 'sunny',               // 目前天氣：sunny / rain / night / snow / storm
   isDirty: false,                 // 是否有尚未手動存檔的變更
@@ -707,9 +742,14 @@ const GameState = {
 
   getStage(){
     const days = this.ageDays();
-    let s = STAGES[0];
-    for (const st of STAGES){ if (days >= st.minAge) s = st; }
-    return s;
+    // 從最高階段往下找，傳回第一個「條件成立」的階段。
+    // 用 <= 確保 days=0 時正確落在 'egg'（minAge:0），
+    // days=0.05 時升到 'baby'（minAge:0.05），以此類推。
+    let result = STAGES[0];
+    for (const st of STAGES){
+      if (days >= st.minAge) result = st;
+    }
+    return result;
   },
 
   addExp(n){
@@ -982,7 +1022,7 @@ const GameState = {
     Object.assign(this, {
       name:'CHICK', alive:true, level:1, exp:0, gold:50, ageMs:0, weight:50,
       hunger:80, happy:80, health:100, energy:80, clean:80, sleepStat:80,
-      isSleeping:false, stage:'baby', background:'room', weather:'sunny',
+      isSleeping:false, stage:'egg', background:'room', weather:'sunny',
       outfit:{hat:false,glasses:false,scarf:false,clothes:false,wings:false,
                crown:false,bowtie:false,headphones:false,backpack:false,tie:false},
       inventory:{food_basic:3, food_premium:0, medicine:0, soap:0, toy:0},
@@ -2314,6 +2354,10 @@ function startGameLoop(isNewGame){
   gameStarted = true;
 
   UI.init();
+  // canvas 的尺寸必須在 #scene 已佔有真實空間之後才能正確計算；
+  // UI.init() 裡的 animManager.start() 在第一幀之前這裡先同步 fit 一次。
+  setTimeout(fitCanvasToScene, 0); // 等下一個 microtask，確保 flexbox layout 已完成
+  setTimeout(() => drawBackground(GameState.background), 10);
   UI.updateStats();
   UI.renderShop('food');
 

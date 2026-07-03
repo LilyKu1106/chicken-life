@@ -121,25 +121,23 @@ button, input{ font-family: var(--font-pixel); }
    ============================================================ */
 #scene{
   position:relative;
-  /* flex: 1 1 0 是讓「小雞主畫面」自動吃掉所有其他面板（Header/狀態列/按鈕列）
-     用完之後「剩下的全部空間」的標準寫法——這正是把小雞放大、置中、
-     成為整個畫面視覺焦點的關鍵：其他面板只取自己需要的高度，
-     scene 永遠拿走剩餘的最大區塊。 */
   flex: 1 1 0;
-  min-height: 0;   /* 關鍵修正：預設 flex item 的 min-height 是 auto，
-                       對 <canvas> 這種「可替換元素」會用其內在尺寸(320x180)
-                       當作不可壓縮的下限，導致矮螢幕下整個 #scene 無法縮小，
-                       進而把下方的 #action-bar 擠出可視範圍而被裁切。
-                       設成 0 後，#scene 才能真正依可用空間自由縮放。 */
+  min-height: 0;
   margin: 0 4px;
   border: 3px solid var(--c-ink);
   overflow:hidden;
-  background:#000;
+  background:#111;
   display:flex; align-items:center; justify-content:center;
 }
+/* Canvas 以 object-fit:contain 方式等比例置中顯示，不再拉伸變形。
+   當場景是直式（手機）時，兩側會留黑邊（letterbox），但小雞比例永遠正確。
+   canvas 的實際繪製解析度由 JS 動態設定為場景的真實像素大小（見 fitCanvasToScene）。*/
 #bg-canvas, #weather-canvas, #chick-canvas{
-  position:absolute; top:0; left:0;
-  width:100%; height:100%;
+  position:absolute;
+  top:50%; left:50%;
+  transform: translate(-50%, -50%);
+  max-width:100%; max-height:100%;
+  width:auto; height:auto;
   min-width:0; min-height:0;
   image-rendering: pixelated;
   image-rendering: -moz-crisp-edges;
