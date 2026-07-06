@@ -2304,10 +2304,14 @@ const RPSGame = (() => {
    讓玩家撐過 60 秒或 3 次碰撞才結算。跑越遠、碰撞越少 → 金幣越多。
    ============================================================================ */
 const ChickenRunGame = (() => {
-  /* ---- 常數 ---- */
-  const GRAVITY    = 0.018;   // 重力加速度（相對座標單位/幀²）
-  const JUMP_VY    = -0.052;  // 跳躍初速（向上為負）
-  const GROUND_Y   = 0.72;    // 地面高度（相對座標）
+  /* ---- 物理常數 ---- */
+  // 所有物理量皆以「每秒」為單位，乘上 dt 後套用，確保不同 FPS 下行為一致。
+  // GRAVITY：每秒向下加速度（相對座標/秒²）。原本是每幀 0.018，
+  //   60fps 下等於每秒 1.08，下墜過快。改以合理的每秒值並乘 dt。
+  const GRAVITY    = 1.6;    // 相對座標/秒²（原本幀相依版約等於 60*0.018=1.08，略微調低讓滯空更好）
+  const JUMP_VY    = -0.80;  // 跳躍初速（相對座標/秒，向上為負）。原本 -0.052*60fps≈-3.12/秒太小，
+                              // 現調至 -0.80/秒 × H 像素，約為原本的 1.45 倍（+45%），跳幅明顯提升。
+  const GROUND_Y   = 0.72;   // 地面相對高度（不變）
   const CHICK_R    = 0.055;   // 小雞碰撞半徑（相對座標）
   const GAME_TIME  = 60;      // 遊戲時長（秒）
   const MAX_HP     = 3;       // 最大血量
@@ -2432,21 +2436,28 @@ const ChickenRunGame = (() => {
     // 速度隨時間加快（最高約 1.8 倍）
     scrollSpeed = 0.004 + (GAME_TIME - timeLeft) / GAME_TIME * 0.004;
 
-    // ── 物理：小雞垂直運動 ──
-    chickVY += GRAVITY;
-    chickY  += chickVY;
+    // ── 物理：小雞垂直運動（全部乘 dt，確保 FPS 無關）──
+    // 公式：vy += gravity * dt  →  y += vy * dt
+    // dt 上限 50ms 防止分頁切回時的大幅時間跳躍造成穿地板。
+    chickVY += GRAVITY * dt;
+    chickY  += chickVY * dt;
+
+    // 落地判定：先修正位置再歸零速度，防止浮點誤差讓小雞輕微穿入地板。
     if(chickY >= GROUND_Y){
-      chickY = GROUND_Y; chickVY = 0;
-      isOnGround = true; isJumping = false; jumpPressed = false;
+      chickY     = GROUND_Y;  // 強制夾回地面，不允許 y 超過地面高度
+      chickVY    = 0;          // 落地時垂直速度完全清零
+      isOnGround = true;
+      isJumping  = false;
+      jumpPressed = false;
     }
 
-    // ── 距離累積 ──
-    distance += scrollSpeed * W * dt * 60;
+    // 距離以每秒捲動速度×畫布寬度×dt 累積，確保 FPS 無關
+    distance += scrollSpeed * W * dt;
 
     // ── 視差背景捲動 ──
     bgLayers.forEach(layer => {
       layer.items.forEach(item => {
-        item.x -= scrollSpeed * layer.speed;
+        item.x -= scrollSpeed * layer.speed * dt * 60; // 背景視差保留視覺感用 *60 標準化
         if(item.x < -0.2) item.x += 1.2;
       });
     });
@@ -2475,15 +2486,15 @@ const ChickenRunGame = (() => {
       coinTimer = 1.4 + Math.random()*0.8;
     }
 
-    // ── 移動障礙物 ──
+    // ── 移動障礙物（dt-scaled，與跳躍物理同步）──
     obstacles = obstacles.filter(o => {
-      o.x -= scrollSpeed;
+      o.x -= scrollSpeed * dt * 60;
       return o.x > -0.15;
     });
 
-    // ── 移動金幣 ──
+    // ── 移動金幣（dt-scaled）──
     coinObjs = coinObjs.filter(c => {
-      c.x -= scrollSpeed;
+      c.x -= scrollSpeed * dt * 60;
       return c.x > -0.1;
     });
 
