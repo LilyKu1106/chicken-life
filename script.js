@@ -2318,11 +2318,11 @@ const ChickenRunGame = (() => {
 
   /* ---- 障礙物類型（寬、高、分類）---- */
   const OBS_TYPES = [
-    { w:0.055, h:0.09,  type:'stone',  label:'石頭',  color:'#9c8f7c', top:false },
-    { w:0.04,  h:0.14,  type:'cactus', label:'仙人掌', color:'#4d8a45', top:false },
-    { w:0.07,  h:0.07,  type:'hole',   label:'水坑',  color:'#5a9abf', top:false },
-    { w:0.12,  h:0.06,  type:'log',    label:'木頭',  color:'#8a5a3b', top:false },
-    { w:0.05,  h:0.08,  type:'bird',   label:'飛鳥',  color:'#6fc3df', top:true  }, // 從天上飛過來（需蹲下或剛好在地上）
+    { w:0.08, h:0.12,  type:'stone',  label:'石頭',  color:'#6b5a4a', top:false },  // 加大+加深
+    { w:0.06, h:0.18,  type:'cactus', label:'仙人掌', color:'#2d7a2d', top:false }, // 加大+加深
+    { w:0.09, h:0.09,  type:'hole',   label:'水坑',  color:'#3a7abf', top:false },  // 加大
+    { w:0.14, h:0.08,  type:'log',    label:'木頭',  color:'#8a4a2b', top:false },  // 加大
+    { w:0.07, h:0.10,  type:'bird',   label:'飛鳥',  color:'#ff4444', top:true  }, // 改紅色像素鳥，不用 emoji
   ];
 
   /* ---- 金幣物件（可收集）---- */
@@ -2378,7 +2378,17 @@ const ChickenRunGame = (() => {
      start()
      ════════════════════════════════ */
   function start(canvas, c, h, cb){
-    W=canvas.width; H=canvas.height; ctx=c; hudEl=h; endCb=cb;
+    // ★ 修正：讓 mg-canvas 使用真實顯示尺寸，避免預設 300×150 被拉伸導致障礙物看不見
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // 如果 canvas 還沒被 MiniGameSystem 設定尺寸，先用父容器大小
+    if (!canvas.width || canvas.width < 100) {
+      const side = Math.min(canvas.clientWidth || 420, canvas.clientHeight || 420, 420);
+      canvas.width = side * dpr;
+      canvas.height = side * dpr;
+    }
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.imageSmoothingEnabled = false;
+    W = canvas.width / dpr; H = canvas.height / dpr; ctx=c; hudEl=h; endCb=cb;
     done=false; resultData=null;
     chickY=GROUND_Y; chickVY=0; isOnGround=true; isJumping=false;
     hp=MAX_HP; distance=0; coins=0; timeLeft=GAME_TIME;
@@ -2580,11 +2590,10 @@ const ChickenRunGame = (() => {
         pxRect(c, ox, GY-4, ow, 12, o.color);
         pxRect(c, ox+4, GY, ow-8, 8, '#3a7a9f');
       } else if(o.type === 'bird'){
-        // 飛鳥：用像素繪製簡易小鳥
-        c.fillStyle = o.color;
-        c.font = `${Math.round(oh*1.4)}px serif`;
-        c.textAlign='center'; c.textBaseline='middle';
-        c.fillText('🐦', ox+ow/2, oy+oh/2);
+        // 飛鳥：改用像素方塊，不用 emoji（避免瀏覽器不支援）
+        pxRect(c, ox + Math.round(ow*0.2), oy + Math.round(oh*0.4), Math.round(ow*0.6), Math.round(oh*0.2), o.color);
+        pxRect(c, ox, oy + Math.round(oh*0.5), ow, Math.round(oh*0.15), o.color);
+        pxRect(c, ox + Math.round(ow*0.7), oy, Math.round(ow*0.25), Math.round(oh*0.4), o.color);
       } else if(o.type === 'cactus'){
         pxRect(c, ox + Math.round(ow*0.3), oy, Math.round(ow*0.4), oh, o.color);
         pxRect(c, ox, oy + Math.round(oh*0.3), ow, Math.round(oh*0.25), o.color);
