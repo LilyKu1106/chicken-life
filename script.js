@@ -2602,6 +2602,11 @@ const ChickenRunGame = (() => {
         pxRect(c, ox, oy, ow, oh, o.color);
         pxRect(c, ox+2, oy+2, ow-4, 4, 'rgba(255,255,255,0.25)');
       }
+      // ★ 新增：所有需要閃避的障礙物加上紅色外框
+      pxRect(c, ox-2, oy-2, ow+4, 2, '#ff0000'); // 上
+      pxRect(c, ox-2, oy+oh, ow+4, 2, '#ff0000'); // 下
+      pxRect(c, ox-2, oy, 2, oh, '#ff0000'); // 左
+      pxRect(c, ox+ow, oy, 2, oh, '#ff0000'); // 右
     });
 
     // ── 金幣 ──
