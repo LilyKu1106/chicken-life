@@ -2433,31 +2433,30 @@ const ChickenRunGame = (() => {
 
     if(timeLeft <= 0){ _endGame(); return; }
 
-    // 速度隨時間加快（最高約 1.8 倍）
-    scrollSpeed = 0.004 + (GAME_TIME - timeLeft) / GAME_TIME * 0.004;
+    // scrollSpeed 定義為「每秒」移動量（相對座標/秒），這樣 dt 乘上去才是正確位移。
+    // 0.24/s = 原本 0.004/幀×60fps；最高加速到 0.48/s。
+    scrollSpeed = 0.24 + (GAME_TIME - timeLeft) / GAME_TIME * 0.24;
 
-    // ── 物理：小雞垂直運動（全部乘 dt，確保 FPS 無關）──
-    // 公式：vy += gravity * dt  →  y += vy * dt
-    // dt 上限 50ms 防止分頁切回時的大幅時間跳躍造成穿地板。
+    // ── 物理：小雞垂直運動（dt-scaled，與 FPS 無關）──
     chickVY += GRAVITY * dt;
     chickY  += chickVY * dt;
 
-    // 落地判定：先修正位置再歸零速度，防止浮點誤差讓小雞輕微穿入地板。
+    // 落地判定：先修正位置再歸零速度，防止浮點誤差穿地板。
     if(chickY >= GROUND_Y){
-      chickY     = GROUND_Y;  // 強制夾回地面，不允許 y 超過地面高度
-      chickVY    = 0;          // 落地時垂直速度完全清零
+      chickY     = GROUND_Y;
+      chickVY    = 0;
       isOnGround = true;
       isJumping  = false;
       jumpPressed = false;
     }
 
-    // 距離以每秒捲動速度×畫布寬度×dt 累積，確保 FPS 無關
+    // ── 距離累積（每秒推進 scrollSpeed × 畫面寬度）──
     distance += scrollSpeed * W * dt;
 
     // ── 視差背景捲動 ──
     bgLayers.forEach(layer => {
       layer.items.forEach(item => {
-        item.x -= scrollSpeed * layer.speed * dt * 60; // 背景視差保留視覺感用 *60 標準化
+        item.x -= scrollSpeed * layer.speed * dt;
         if(item.x < -0.2) item.x += 1.2;
       });
     });
@@ -2475,7 +2474,6 @@ const ChickenRunGame = (() => {
         type: type.type,
         top,
       });
-      // 難度越高間隔越短
       spawnTimer = 1.2 - (GAME_TIME - timeLeft)/GAME_TIME * 0.5 + Math.random()*0.6;
     }
 
@@ -2486,16 +2484,16 @@ const ChickenRunGame = (() => {
       coinTimer = 1.4 + Math.random()*0.8;
     }
 
-    // ── 移動障礙物（dt-scaled，與跳躍物理同步）──
+    // ── 移動障礙物（每秒 scrollSpeed，與小雞物理同單位）──
     obstacles = obstacles.filter(o => {
-      o.x -= scrollSpeed * dt * 60;
+      o.x -= scrollSpeed * dt;
       return o.x > -0.15;
     });
 
-    // ── 移動金幣（dt-scaled）──
-    coinObjs = coinObjs.filter(c => {
-      c.x -= scrollSpeed * dt * 60;
-      return c.x > -0.1;
+    // ── 移動金幣 ──
+    coinObjs = coinObjs.filter(co => {
+      co.x -= scrollSpeed * dt;
+      return co.x > -0.1;
     });
 
     // ── 碰撞偵測：障礙物 ──
@@ -2535,6 +2533,9 @@ const ChickenRunGame = (() => {
      render()
      ════════════════════════════════ */
   function render(c){
+    // 每幀先清除，防止殘影或 canvas context 狀態污染（在某些行動裝置瀏覽器上
+    // 不 clearRect 直接疊畫會讓半透明像素累積，導致整個畫面逐漸變暗）
+    c.clearRect(0, 0, W, H);
     const GY = Math.round(H * GROUND_Y);
 
     // ── 天空 ──
@@ -2565,8 +2566,8 @@ const ChickenRunGame = (() => {
     pxRect(c, 0, GY, W, H - GY, '#8fcf6a');
     pxRect(c, 0, GY, W, 6, '#6fae5a');
 
-    // 地面條紋（跑動感）
-    const stripeOff = Math.round((Date.now()/8) % 40);
+    // 地面條紋（跑動感），用 distance 驅動確保速度一致
+    const stripeOff = Math.round(distance * 0.4) % 40;
     for(let sx = -40 + stripeOff; sx < W; sx += 40){
       pxRect(c, sx, GY + 8, 20, 3, 'rgba(255,255,255,0.15)');
     }
