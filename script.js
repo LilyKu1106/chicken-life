@@ -1273,6 +1273,7 @@ const MiniGameSystem = (() => {
       case 'memory':    currentGame = MemoryGame;    break;
       case 'wheel':     currentGame = WheelGame;     break;
       case 'rps':       currentGame = RPSGame;       break;
+      case 'chickenrun': currentGame = ChickenRunGame; break;
       default: return;
     }
     currentGame.start(mgCanvas, mgCtx, hud, () => finish(currentGame.getResult()));
@@ -2293,6 +2294,397 @@ const RPSGame = (() => {
     get done(){ return done; },
     streak: 0,   // 跨局連勝計數（直接掛在 module object 上持久化）
   };
+})();
+
+/* ============================================================================
+   🏃 GAME 6：小雞賽跑《Chicken Run》
+   ----------------------------------------------------------------------------
+   60 秒橫向捲軸跑酷遊戲。小雞自動向右跑，玩家點擊/觸控/空白鍵控制跳躍。
+   障礙物從右側持續生成並向左滾動；碰到障礙物扣血條（3 血）而非直接結束，
+   讓玩家撐過 60 秒或 3 次碰撞才結算。跑越遠、碰撞越少 → 金幣越多。
+   ============================================================================ */
+const ChickenRunGame = (() => {
+  /* ---- 常數 ---- */
+  const GRAVITY    = 0.018;   // 重力加速度（相對座標單位/幀²）
+  const JUMP_VY    = -0.052;  // 跳躍初速（向上為負）
+  const GROUND_Y   = 0.72;    // 地面高度（相對座標）
+  const CHICK_R    = 0.055;   // 小雞碰撞半徑（相對座標）
+  const GAME_TIME  = 60;      // 遊戲時長（秒）
+  const MAX_HP     = 3;       // 最大血量
+
+  /* ---- 障礙物類型（寬、高、分類）---- */
+  const OBS_TYPES = [
+    { w:0.055, h:0.09,  type:'stone',  label:'石頭',  color:'#9c8f7c', top:false },
+    { w:0.04,  h:0.14,  type:'cactus', label:'仙人掌', color:'#4d8a45', top:false },
+    { w:0.07,  h:0.07,  type:'hole',   label:'水坑',  color:'#5a9abf', top:false },
+    { w:0.12,  h:0.06,  type:'log',    label:'木頭',  color:'#8a5a3b', top:false },
+    { w:0.05,  h:0.08,  type:'bird',   label:'飛鳥',  color:'#6fc3df', top:true  }, // 從天上飛過來（需蹲下或剛好在地上）
+  ];
+
+  /* ---- 金幣物件（可收集）---- */
+  const COIN_COLOR = '#ffd23f';
+
+  /* ---- 狀態 ---- */
+  let W, H, ctx, hudEl, endCb, done, resultData;
+  let chickY, chickVY, isOnGround, isJumping;
+  let hp, distance, coins, timeLeft, startT, lastT;
+  let obstacles = [], coinObjs = [];
+  let spawnTimer = 0, coinTimer = 0;
+  let scrollSpeed;          // 畫面捲動速度（相對座標/幀），隨時間加快
+  let hitFlash = 0;         // 受傷閃紅幀數
+  let frame = 0;
+  let bgLayers = [];        // 視差背景圖層 [{x, speed, items:[]}]
+  let jumpPressed = false;  // 防止長按連跳
+
+  /* ---- Web Audio ---- */
+  let _actx = null;
+  function _ac(){ if(!_actx) _actx=new(window.AudioContext||window.webkitAudioContext)(); return _actx; }
+  function _beep(f,d,t='square',v=0.07,delay=0){
+    if(!GameState.settings.sfx) return;
+    try{
+      const ac=_ac(), t0=ac.currentTime+delay;
+      const o=ac.createOscillator(), g=ac.createGain();
+      o.type=t; o.frequency.setValueAtTime(f,t0);
+      g.gain.setValueAtTime(v,t0); g.gain.exponentialRampToValueAtTime(0.0001,t0+d);
+      o.connect(g); g.connect(ac.destination); o.start(t0); o.stop(t0+d);
+    }catch(e){}
+  }
+  const SFX = {
+    jump: ()=>{ _beep(380,0.06,'square',0.07); _beep(520,0.05,'square',0.05,0.05); },
+    hit:  ()=>{ _beep(180,0.12,'sawtooth',0.1); _beep(120,0.15,'sine',0.06,0.08); },
+    coin: ()=>{ _beep(880,0.04,'square',0.05); _beep(1100,0.05,'square',0.04,0.04); },
+    end:  ()=>{ [523,659,784].forEach((f,i)=>_beep(f,0.1,'square',0.06,i*0.08)); },
+  };
+
+  /* ════════════════════════════════
+     建立視差背景圖層
+     ════════════════════════════════ */
+  function _buildBg(){
+    bgLayers = [
+      // 遠景：山丘輪廓
+      { speed:0.2, items: Array.from({length:6}, (_,i)=>({ x:i/6, h:0.06+Math.random()*0.08, w:0.12+Math.random()*0.1 })) },
+      // 中景：樹木
+      { speed:0.5, items: Array.from({length:8}, (_,i)=>({ x:i/8+Math.random()*0.04, h:0.1+Math.random()*0.08 })) },
+      // 近景：草叢
+      { speed:0.85, items: Array.from({length:12}, (_,i)=>({ x:i/12, h:0.04+Math.random()*0.03 })) },
+    ];
+  }
+
+  /* ════════════════════════════════
+     start()
+     ════════════════════════════════ */
+  function start(canvas, c, h, cb){
+    W=canvas.width; H=canvas.height; ctx=c; hudEl=h; endCb=cb;
+    done=false; resultData=null;
+    chickY=GROUND_Y; chickVY=0; isOnGround=true; isJumping=false;
+    hp=MAX_HP; distance=0; coins=0; timeLeft=GAME_TIME;
+    startT=lastT=performance.now();
+    obstacles=[]; coinObjs=[]; spawnTimer=0; coinTimer=0; hitFlash=0; frame=0;
+    scrollSpeed=0.004;
+    jumpPressed=false;
+    _buildBg();
+
+    hudEl.textContent=`⏱ ${GAME_TIME}  ❤️❤️❤️  🪙 0`;
+
+    // 輸入：點擊 / 觸控 / 空白鍵 → 跳躍
+    const onJump = (e) => {
+      if(done) return;
+      if(e.type==='keydown' && e.code!=='Space') return;
+      if(e.type==='keydown') e.preventDefault();
+      if(!jumpPressed && isOnGround){
+        chickVY = JUMP_VY;
+        isOnGround = false;
+        isJumping = true;
+        jumpPressed = true;
+        SFX.jump();
+      }
+    };
+    const onRelease = (e) => {
+      if(e.type==='keyup' && e.code!=='Space') return;
+      jumpPressed = false;
+    };
+    canvas.addEventListener('touchstart', onJump, {passive:false});
+    canvas.addEventListener('click', onJump);
+    document.addEventListener('keydown', onJump);
+    document.addEventListener('keyup', onRelease);
+
+    ChickenRunGame._cleanup = () => {
+      canvas.removeEventListener('touchstart', onJump);
+      canvas.removeEventListener('click', onJump);
+      document.removeEventListener('keydown', onJump);
+      document.removeEventListener('keyup', onRelease);
+    };
+  }
+
+  /* ════════════════════════════════
+     update()
+     ════════════════════════════════ */
+  function update(){
+    if(done) return;
+    const now = performance.now();
+    const dt  = Math.min((now - lastT)/1000, 0.05); // 最大步長 50ms 防止大跳
+    lastT = now;
+    timeLeft = Math.max(0, GAME_TIME - (now - startT)/1000);
+    frame++;
+
+    if(timeLeft <= 0){ _endGame(); return; }
+
+    // 速度隨時間加快（最高約 1.8 倍）
+    scrollSpeed = 0.004 + (GAME_TIME - timeLeft) / GAME_TIME * 0.004;
+
+    // ── 物理：小雞垂直運動 ──
+    chickVY += GRAVITY;
+    chickY  += chickVY;
+    if(chickY >= GROUND_Y){
+      chickY = GROUND_Y; chickVY = 0;
+      isOnGround = true; isJumping = false; jumpPressed = false;
+    }
+
+    // ── 距離累積 ──
+    distance += scrollSpeed * W * dt * 60;
+
+    // ── 視差背景捲動 ──
+    bgLayers.forEach(layer => {
+      layer.items.forEach(item => {
+        item.x -= scrollSpeed * layer.speed;
+        if(item.x < -0.2) item.x += 1.2;
+      });
+    });
+
+    // ── 生成障礙物 ──
+    spawnTimer -= dt;
+    if(spawnTimer <= 0){
+      const type = OBS_TYPES[Math.floor(Math.random() * OBS_TYPES.length)];
+      const top  = type.top;
+      obstacles.push({
+        x: 1.05,
+        y: top ? GROUND_Y - 0.28 - type.h : GROUND_Y - type.h,
+        w: type.w, h: type.h,
+        color: type.color,
+        type: type.type,
+        top,
+      });
+      // 難度越高間隔越短
+      spawnTimer = 1.2 - (GAME_TIME - timeLeft)/GAME_TIME * 0.5 + Math.random()*0.6;
+    }
+
+    // ── 生成金幣 ──
+    coinTimer -= dt;
+    if(coinTimer <= 0){
+      coinObjs.push({ x:0.92 + Math.random()*0.1, y: GROUND_Y - 0.08 - Math.random()*0.15, r:0.018, collected:false });
+      coinTimer = 1.4 + Math.random()*0.8;
+    }
+
+    // ── 移動障礙物 ──
+    obstacles = obstacles.filter(o => {
+      o.x -= scrollSpeed;
+      return o.x > -0.15;
+    });
+
+    // ── 移動金幣 ──
+    coinObjs = coinObjs.filter(c => {
+      c.x -= scrollSpeed;
+      return c.x > -0.1;
+    });
+
+    // ── 碰撞偵測：障礙物 ──
+    if(hitFlash <= 0){
+      const cx = 0.2, cy = chickY;
+      obstacles.forEach(o => {
+        const ox = o.x + o.w/2, oy = o.y + o.h/2;
+        // AABB 碰撞（以小雞中心和障礙物矩形做近似）
+        if( Math.abs(cx - ox) < (CHICK_R + o.w/2)*0.85 &&
+            Math.abs(cy - oy) < (CHICK_R + o.h/2)*0.85 ){
+          hp--;
+          hitFlash = 40;
+          SFX.hit();
+          if(hp <= 0){ _endGame(); }
+        }
+      });
+    } else { hitFlash--; }
+
+    // ── 碰撞偵測：金幣 ──
+    coinObjs.forEach(c => {
+      if(c.collected) return;
+      if( Math.abs(0.2 - c.x) < CHICK_R + c.r &&
+          Math.abs(chickY - c.y) < CHICK_R + c.r ){
+        c.collected = true;
+        coins++;
+        SFX.coin();
+      }
+    });
+    coinObjs = coinObjs.filter(c => !c.collected);
+
+    // ── HUD ──
+    const hpStr = '❤️'.repeat(hp) + '🖤'.repeat(MAX_HP - hp);
+    hudEl.textContent = `⏱ ${Math.ceil(timeLeft)}  ${hpStr}  🪙 ${coins}  📏 ${Math.floor(distance)}m`;
+  }
+
+  /* ════════════════════════════════
+     render()
+     ════════════════════════════════ */
+  function render(c){
+    const GY = Math.round(H * GROUND_Y);
+
+    // ── 天空 ──
+    pxRect(c, 0, 0, W, GY, '#bfe9ff');
+
+    // ── 太陽 ──
+    fillPixelCircle(c, W*0.88, H*0.1, H*0.055, '#ffe87a');
+
+    // ── 視差背景 ──
+    bgLayers.forEach((layer, li) => {
+      const col = li===0 ? '#c8e0b0' : li===1 ? '#7ab86a' : '#5ca04a';
+      layer.items.forEach(item => {
+        const ix = Math.round(item.x * W);
+        if(li < 2){
+          // 山丘 / 樹（三角形 + 矩形）
+          const ih = Math.round((item.h||0.08) * H);
+          const iw = Math.round((item.w||0.08) * W);
+          pxRect(c, ix, GY - ih, iw, ih, col);
+          if(li===1) pxRect(c, ix + Math.round(iw*0.35), GY - ih - Math.round(ih*0.6), Math.round(iw*0.3), Math.round(ih*0.6), '#4d8a45');
+        } else {
+          // 草叢
+          pxRect(c, ix, GY - Math.round(item.h*H), 8, Math.round(item.h*H), col);
+        }
+      });
+    });
+
+    // ── 地面 ──
+    pxRect(c, 0, GY, W, H - GY, '#8fcf6a');
+    pxRect(c, 0, GY, W, 6, '#6fae5a');
+
+    // 地面條紋（跑動感）
+    const stripeOff = Math.round((Date.now()/8) % 40);
+    for(let sx = -40 + stripeOff; sx < W; sx += 40){
+      pxRect(c, sx, GY + 8, 20, 3, 'rgba(255,255,255,0.15)');
+    }
+
+    // ── 障礙物 ──
+    obstacles.forEach(o => {
+      const ox=Math.round(o.x*W), oy=Math.round(o.y*H);
+      const ow=Math.round(o.w*W), oh=Math.round(o.h*H);
+      if(o.type === 'hole'){
+        pxRect(c, ox, GY-4, ow, 12, o.color);
+        pxRect(c, ox+4, GY, ow-8, 8, '#3a7a9f');
+      } else if(o.type === 'bird'){
+        // 飛鳥：用像素繪製簡易小鳥
+        c.fillStyle = o.color;
+        c.font = `${Math.round(oh*1.4)}px serif`;
+        c.textAlign='center'; c.textBaseline='middle';
+        c.fillText('🐦', ox+ow/2, oy+oh/2);
+      } else if(o.type === 'cactus'){
+        pxRect(c, ox + Math.round(ow*0.3), oy, Math.round(ow*0.4), oh, o.color);
+        pxRect(c, ox, oy + Math.round(oh*0.3), ow, Math.round(oh*0.25), o.color);
+      } else {
+        // 石頭 / 木頭
+        pxRect(c, ox, oy, ow, oh, o.color);
+        pxRect(c, ox+2, oy+2, ow-4, 4, 'rgba(255,255,255,0.25)');
+      }
+    });
+
+    // ── 金幣 ──
+    coinObjs.forEach(coin => {
+      fillPixelCircle(c, Math.round(coin.x*W), Math.round(coin.y*H), Math.round(coin.r*W), COIN_COLOR);
+      fillPixelCircle(c, Math.round(coin.x*W)-2, Math.round(coin.y*H)-2, Math.round(coin.r*W*0.4), 'rgba(255,255,255,0.6)');
+    });
+
+    // ── 小雞（用 fillPixelCircle 繪製，位置依跳躍高度浮動）──
+    const chicX  = Math.round(0.2  * W);
+    const chicY  = Math.round(chickY * H);
+    const chicR  = Math.round(CHICK_R * W);
+    const squash = isOnGround ? 1.0 : (chickVY < 0 ? 0.85 : 1.08); // 落地前稍微拉長
+    const flash  = hitFlash > 0 && Math.floor(hitFlash/4)%2===0;
+
+    c.save();
+    c.translate(chicX, chicY);
+    c.scale(1, squash);
+
+    const bodyCol = flash ? '#ff4444' : (GameState.health < 20 ? PALETTE.sick : PALETTE.bodyMain);
+    // 翅膀（向後飄）
+    fillPixelCircle(c, -chicR*0.85, chicR*0.18, Math.round(chicR*0.4), '#e8a800');
+    // 身體
+    fillPixelCircle(c, 0, 0, chicR, bodyCol);
+    fillPixelCircle(c, -Math.round(chicR*0.28), -Math.round(chicR*0.3), Math.round(chicR*0.42), PALETTE.bodyLight);
+    // 眼睛（跑步時興奮大眼）
+    const ex = Math.round(chicR*0.32);
+    fillPixelCircle(c, ex, -Math.round(chicR*0.06), Math.round(chicR*0.32), PALETTE.eyeWhite);
+    fillPixelCircle(c, ex+2, -Math.round(chicR*0.06), Math.round(chicR*0.18), PALETTE.eyeBlack);
+    // 嘴喙（向右）
+    pxRect(c, Math.round(chicR*0.55), Math.round(chicR*0.12), Math.round(chicR*0.35), Math.round(chicR*0.2), PALETTE.beak);
+    // 臉紅
+    fillPixelCircle(c, Math.round(chicR*0.5), Math.round(chicR*0.2), Math.round(chicR*0.16), PALETTE.blush);
+    // 雞冠（成年以上）
+    if(['teen','adult','old'].includes(GameState.stage)){
+      fillPixelCircle(c, -Math.round(chicR*0.1), -Math.round(chicR*1.08), Math.round(chicR*0.22), PALETTE.comb);
+    }
+    // 腳（跑步動畫：交替抬起）
+    const legPhase = Math.sin(frame * 0.4);
+    pxRect(c, -Math.round(chicR*0.3), Math.round(chicR*0.82+legPhase*4), 7, 7, PALETTE.feet);
+    pxRect(c, Math.round(chicR*0.1),  Math.round(chicR*0.82-legPhase*4), 7, 7, PALETTE.feet);
+
+    c.restore();
+
+    // 跳躍時的速度線
+    if(!isOnGround && chickVY < -0.01){
+      c.strokeStyle='rgba(255,255,255,0.4)'; c.lineWidth=2;
+      for(let i=1;i<=3;i++){
+        c.beginPath();
+        c.moveTo(chicX - chicR - i*8, chicY - chicR*0.5 + i*3);
+        c.lineTo(chicX - chicR - i*8 - 12, chicY - chicR*0.5 + i*3);
+        c.stroke();
+      }
+    }
+
+    // ── 受傷提示 ──
+    if(hitFlash > 30){
+      c.fillStyle='rgba(255,0,0,0.18)';
+      c.fillRect(0, 0, W, H);
+      c.fillStyle='#ff4444'; c.font=`bold ${Math.round(H*0.06)}px monospace`;
+      c.textAlign='center'; c.textBaseline='middle';
+      c.fillText('OUCH!', W/2, H*0.35);
+    }
+
+    // ── 操作提示（前 3 秒）──
+    const elapsed = GAME_TIME - timeLeft;
+    if(elapsed < 3){
+      c.globalAlpha = Math.max(0, 1 - elapsed/2.5);
+      c.fillStyle='#ffe9b8'; c.font=`${Math.round(H*0.04)}px monospace`;
+      c.textAlign='center'; c.textBaseline='middle';
+      c.fillText('點擊 / 空白鍵 跳躍！', W/2, H*0.25);
+      c.globalAlpha=1;
+    }
+  }
+
+  /* ════════════════════════════════
+     結算
+     ════════════════════════════════ */
+  function _endGame(){
+    if(done) return; done=true;
+    SFX.end();
+    const dist = Math.floor(distance);
+    // 金幣：基礎距離 + 收集到的金幣 + 存活加成（每剩餘 1 血 +5）
+    const goldEarned = Math.floor(dist / 15) + coins * 3 + (hp * 5);
+
+    const summary =
+      dist >= 400 ? `跑了 ${dist}m！小雞衝向終點，觀眾瘋狂歡呼！` :
+      dist >= 200 ? `跑了 ${dist}m，還不錯！小雞有點喘，但很開心。` :
+                    `跑了 ${dist}m，小雞下次會更努力的！`;
+
+    resultData = {
+      gameName: '小雞賽跑',
+      gold:    goldEarned,
+      hunger:  0,
+      happy:   hp > 0 ? 10 : 0,
+      happyPen: 0,
+      summary,
+    };
+    if(endCb) endCb();
+  }
+
+  function stop(){ if(ChickenRunGame._cleanup) ChickenRunGame._cleanup(); }
+  function getResult(){ return resultData; }
+  return { start, update, render, stop, getResult, get done(){ return done; } };
 })();
 
 function scheduleRandomEvent(){
