@@ -1208,7 +1208,7 @@ const RANDOM_EVENTS = [
 ];
 
 /* ============================================================================
-   8.5. MiniGameSystem — 四款可玩的像素小遊戲
+   8.5. MiniGameSystem — 可玩的像素小遊戲
    ----------------------------------------------------------------------------
    架構：MiniGameSystem 是所有小遊戲的統一管理器，負責：
    - showMenu()：彈出遊戲選單讓玩家選擇
@@ -2321,8 +2321,8 @@ const ChickenRunGame = (() => {
   const GRAVITY    = 1.6;    // 相對座標/秒²（原本幀相依版約等於 60*0.018=1.08，略微調低讓滯空更好）
   const JUMP_VY    = -0.80;  // 跳躍初速（相對座標/秒，向上為負）。原本 -0.052*60fps≈-3.12/秒太小，
                               // 現調至 -0.80/秒 × H 像素，約為原本的 1.45 倍（+45%），跳幅明顯提升。
-  const GROUND_Y   = 0.72;   // 地面相對高度（不變）
-  const CHICK_R    = 0.055;   // 小雞碰撞半徑（相對座標）
+  const GROUND_Y   = 0.4;   // 地面相對高度（不變）
+  const CHICK_R    = 0.05;   // 小雞碰撞半徑（相對座標）
   const GAME_TIME  = 60;      // 遊戲時長（秒）
   const MAX_HP     = 3;       // 最大血量
 
@@ -2331,10 +2331,10 @@ const ChickenRunGame = (() => {
      安全邊距：最高取 h=0.15，小雞頂端與障礙物頂端至少差 0.05。
      bird 已移除：無蹲下機制時空中障礙無合理迴避方式，留坑日後加。 */
   const OBS_TYPES = [
-    { w:0.09, h:0.10, type:'stone',  label:'石頭',  color:'#9c8f7c', colorTop:'#c0b4a4', top:false },
-    { w:0.07, h:0.14, type:'cactus', label:'仙人掌', color:'#4d8a45', colorTop:'#6aaa60', top:false },
-    { w:0.11, h:0.07, type:'log',    label:'木頭',  color:'#8a5a3b', colorTop:'#b07a56', top:false },
-    { w:0.10, h:0.12, type:'fence',  label:'柵欄',  color:'#c8a060', colorTop:'#e8c880', top:false },
+    { w:0.05, h:0.10, type:'stone',  label:'石頭',  color:'#9c8f7c', colorTop:'#c0b4a4', top:false },
+    { w:0.05, h:0.14, type:'cactus', label:'仙人掌', color:'#4d8a45', colorTop:'#6aaa60', top:false },
+    { w:0.05, h:0.07, type:'log',    label:'木頭',  color:'#8a5a3b', colorTop:'#b07a56', top:false },
+    { w:0.05, h:0.12, type:'fence',  label:'柵欄',  color:'#c8a060', colorTop:'#e8c880', top:false },
   ];
 
   /* ---- 金幣物件（可收集）---- */
