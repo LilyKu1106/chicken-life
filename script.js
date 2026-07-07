@@ -1208,7 +1208,7 @@ const RANDOM_EVENTS = [
 ];
 
 /* ============================================================================
-   8.5. MiniGameSystem — 可玩的像素小遊戲
+   8.5. MiniGameSystem — 四款可玩的像素小遊戲
    ----------------------------------------------------------------------------
    架構：MiniGameSystem 是所有小遊戲的統一管理器，負責：
    - showMenu()：彈出遊戲選單讓玩家選擇
@@ -1725,7 +1725,12 @@ const WheelGame = (() => {
 
   function settle(){
     spinning=false; done=true;
-    const seg = SEGMENTS[targetSegment];
+    // 指針固定在畫布正上方（canvas 角度 = -π/2）。
+    // 算出「指針相對於轉盤當前角度」對應的扇形索引，確保獎勵與視覺一致。
+    const POINTER = -Math.PI / 2;
+    const rel = ((POINTER - angle) % (Math.PI*2) + Math.PI*2) % (Math.PI*2);
+    const actualSegment = Math.floor(rel / SEG) % N;
+    const seg = SEGMENTS[actualSegment];
     WheelGame.usedDay = new Date().toDateString();
     const r = seg.reward;
     if(r.gold) GameState.addGold(r.gold);
@@ -2318,23 +2323,19 @@ const ChickenRunGame = (() => {
   // 所有物理量皆以「每秒」為單位，乘上 dt 後套用，確保不同 FPS 下行為一致。
   // GRAVITY：每秒向下加速度（相對座標/秒²）。原本是每幀 0.018，
   //   60fps 下等於每秒 1.08，下墜過快。改以合理的每秒值並乘 dt。
-  const GRAVITY    = 1.6;    // 相對座標/秒²（原本幀相依版約等於 60*0.018=1.08，略微調低讓滯空更好）
-  const JUMP_VY    = -0.80;  // 跳躍初速（相對座標/秒，向上為負）。原本 -0.052*60fps≈-3.12/秒太小，
-                              // 現調至 -0.80/秒 × H 像素，約為原本的 1.45 倍（+45%），跳幅明顯提升。
-  const GROUND_Y   = 0.4;   // 地面相對高度（不變）
-  const CHICK_R    = 0.05;   // 小雞碰撞半徑（相對座標）
-  const GAME_TIME  = 60;      // 遊戲時長（秒）
-  const MAX_HP     = 3;       // 最大血量
+  const GRAVITY    = 1.6;
+  const JUMP_VY    = -0.80;
+  const GROUND_Y   = 0.72;
+  const CHICK_R    = 0.05;    // 縮小碰撞半徑，讓判定更寬鬆
+  const GAME_TIME  = 60;
+  const MAX_HP     = 3;
 
-  /* ---- 障礙物類型（寬、高、分類）----
-     h 必須 < 0.20（跳躍最大高度），讓玩家必定跳得過。
-     安全邊距：最高取 h=0.15，小雞頂端與障礙物頂端至少差 0.05。
-     bird 已移除：無蹲下機制時空中障礙無合理迴避方式，留坑日後加。 */
+  /* ---- 障礙物類型 ---- w 統一改為 0.05（窄身易閃避），h 保持低於跳躍高度 0.20 */
   const OBS_TYPES = [
-    { w:0.05, h:0.10, type:'stone',  label:'石頭',  color:'#9c8f7c', colorTop:'#c0b4a4', top:false },
-    { w:0.05, h:0.14, type:'cactus', label:'仙人掌', color:'#4d8a45', colorTop:'#6aaa60', top:false },
-    { w:0.05, h:0.07, type:'log',    label:'木頭',  color:'#8a5a3b', colorTop:'#b07a56', top:false },
-    { w:0.05, h:0.12, type:'fence',  label:'柵欄',  color:'#c8a060', colorTop:'#e8c880', top:false },
+    { w:0.05, h:0.09,  type:'stone',  label:'石頭',  color:'#9c8f7c', colorTop:'#c0b4a4', top:false },
+    { w:0.05, h:0.12,  type:'cactus', label:'仙人掌', color:'#4d8a45', colorTop:'#6aaa60', top:false },
+    { w:0.05, h:0.06,  type:'log',    label:'木頭',  color:'#8a5a3b', colorTop:'#b07a56', top:false },
+    { w:0.05, h:0.10,  type:'fence',  label:'柵欄',  color:'#c8a060', colorTop:'#e8c880', top:false },
   ];
 
   /* ---- 金幣物件（可收集）---- */
@@ -2477,18 +2478,22 @@ const ChickenRunGame = (() => {
     spawnTimer -= dt;
     if(spawnTimer <= 0){
       const type = OBS_TYPES[Math.floor(Math.random() * OBS_TYPES.length)];
-      // o.y = 障礙物「頂端」的相對 Y 座標（GROUND_Y - h = 地面上方 h 高度處）
-      obstacles.push({
-        x:    1.05,
-        y:    GROUND_Y - type.h,   // 頂端緊貼地面上方
-        w:    type.w,
-        h:    type.h,
-        color:    type.color,
-        colorTop: type.colorTop,
-        type:     type.type,
-        top:  false,
-      });
-      spawnTimer = 1.2 - (GAME_TIME - timeLeft)/GAME_TIME * 0.5 + Math.random()*0.6;
+      // 防止兩個障礙物太靠近：上一個障礙物還沒離開右側 0.45 範圍就不生成
+      const lastObs = obstacles[obstacles.length - 1];
+      const tooClose = lastObs && lastObs.x > 0.55;
+      if (!tooClose){
+        obstacles.push({
+          x:    1.05,
+          y:    GROUND_Y - type.h,
+          w:    type.w,
+          h:    type.h,
+          color:    type.color,
+          colorTop: type.colorTop,
+          type:     type.type,
+          top:  false,
+        });
+      }
+      spawnTimer = 1.8 - (GAME_TIME - timeLeft)/GAME_TIME * 0.6 + Math.random()*1.2;
     }
 
     // ── 生成金幣 ──
@@ -2967,33 +2972,29 @@ const LaneRunGame = (() => {
       this.spawnTimer -= dt;
       if (this.spawnTimer > 0) return;
       this._spawn(speed);
-      // 間隔隨速度縮短，但設最小值
-      this.spawnTimer = Math.max(0.45, 1.4 - (speed - BASE_SPEED) / BASE_SPEED * 0.5);
+      // 間隔隨速度縮短，最短 0.9s（確保小學生有足夠反應時間）
+      this.spawnTimer = Math.max(0.9, 1.8 - (speed - BASE_SPEED) / BASE_SPEED * 0.5);
     },
 
     _spawn(speed){
-      // 決定哪幾條跑道有障礙（至多 2 條，確保留 1 條空）
-      const lanePerm = [0, 1, 2].sort(() => Math.random() - 0.5);
-      const count = Math.random() < 0.35 ? 2 : 1; // 35% 機率雙障礙
-      const usedLanes = lanePerm.slice(0, count);
-      const spawnY = -0.12; // 從畫面頂端上方生成
+      // Prototype 難度：一次只出現一個障礙物，確保玩家有充裕時間反應
+      const lane   = Math.floor(Math.random() * LANES);
+      const spawnY = -0.12;
 
-      // 確認與既有障礙物不重疊（同跑道 Y 距離太近則跳過）
-      for (const lane of usedLanes){
-        const tooClose = this.items.some(o =>
-          o.lane === lane && Math.abs(o.yR - spawnY) < 0.22
-        );
-        if (tooClose) continue;
+      // 同跑道最短間距保護
+      const tooClose = this.items.some(o =>
+        o.lane === lane && Math.abs(o.yR - spawnY) < 0.30
+      );
+      if (tooClose) return;
 
-        const def = OBS_DEFS[Math.floor(Math.random() * OBS_DEFS.length)];
-        this.items.push({
-          lane,
-          xR: LANE_XR[lane],
-          yR: spawnY, prevYR: spawnY - 0.01,
-          hw: def.w / 2, hh: def.h / 2,
-          def,
-        });
-      }
+      const def = OBS_DEFS[Math.floor(Math.random() * OBS_DEFS.length)];
+      this.items.push({
+        lane,
+        xR: LANE_XR[lane],
+        yR: spawnY, prevYR: spawnY - 0.01,
+        hw: def.w / 2, hh: def.h / 2,
+        def,
+      });
     },
   };
 
