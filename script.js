@@ -3377,8 +3377,8 @@ let weatherTimerId     = null;
 const StarCountGame = (() => {
   /* ── 常數 ── */
   const TOTAL_Q      = 10;   // 總題數
-  const SHOW_MS      = 850;  // 星星顯示時長（毫秒）
-  const ANSWER_MS    = 3000; // 作答時限（毫秒）
+  const SHOW_MS      = 5000;  // 星星顯示時長（毫秒）
+  const ANSWER_MS    = 5000; // 作答時限（毫秒）
   const RESULT_MS    = 1100; // 顯示結果時長（毫秒）
   const MIN_STARS    = 3;
   const MAX_STARS    = 15;
