@@ -1233,6 +1233,111 @@ const RANDOM_EVENTS = [
    - finish(result)：統一結算（計算金幣/飽食/心情獎勵、寫入日記、解除輸入鎖）
    每款遊戲是一個獨立的 object，實作 { start, stop, handleInput } 介面。
    ============================================================================ */
+/* 各遊戲的操作說明卡片內容
+   icon：顯示在標題旁的 emoji
+   lines：說明行（每行顯示一條，用小圓點開頭）
+   tip：最後的提示小字（可選）
+*/
+const GAME_TUTORIALS = {
+  catchfood: {
+    icon: '🍗', title: '接飼料《飢餓大作戰》',
+    lines: [
+      '食物從天上掉下來，移動小雞去接住！',
+      '電腦：← → 方向鍵左右移動',
+      '手機：觸碰畫面左/右側移動',
+      '💀 骷髏 = 壞食物，接到會扣分！',
+      '漏接 5 個或時間到即結束。',
+    ],
+    tip: '30 秒內接越多越好，時間到才結算！',
+  },
+  bughunt: {
+    icon: '🐛', title: '抓蟲大作戰',
+    lines: [
+      '畫面上會出現各種蟲子，點擊抓住牠們！',
+      '🪱🐛🦗🐝🦋 好蟲 → 加分 +10',
+      '💀 骷髏 = 毒蟲 → 累積懲罰',
+      '蟲子會自動消失，要快！',
+      '30 秒內抓越多越好。',
+    ],
+    tip: '點擊/觸碰蟲子即可抓取',
+  },
+  memory: {
+    icon: '🃏', title: '翻牌記憶《小雞記憶挑戰》',
+    lines: [
+      '4×4 共 16 張牌，找出 8 對相同圖案！',
+      '每次翻開 2 張，圖案相同就配對成功。',
+      '圖案不同會自動翻回，要記住位置！',
+      '用越少步數完成 → 金幣越多。',
+    ],
+    tip: '點擊任意一張牌開始翻牌',
+  },
+  rps: {
+    icon: '✊', title: '猜拳對決《小雞猜拳對決》',
+    lines: [
+      '與 AI 小雞進行 5 回合剪刀石頭布！',
+      '✊ 石頭 > ✌️ 剪刀 > ✋ 布 > ✊ 石頭',
+      'AI 會分析你的出拳習慣，小心被反制！',
+      '小雞心情越好，AI 攻擊性越強。',
+      '連勝 3 次以上金幣倍率加成！',
+    ],
+    tip: '點擊三個按鈕之一出拳',
+  },
+  chickenrun: {
+    icon: '🏃', title: '小雞賽跑',
+    lines: [
+      '小雞自動向右跑，你來控制跳躍！',
+      '電腦：空白鍵 / ↑ 跳躍',
+      '手機：點擊畫面任意處跳躍',
+      '撞到障礙物扣 1 顆愛心（共 3 顆）。',
+      '路上有 🪙 金幣可以收集！',
+    ],
+    tip: '跑越遠、撞越少 → 金幣越多',
+  },
+  lanerun: {
+    icon: '🛤️', title: '三跑道跑酷',
+    lines: [
+      '三條跑道，左右切換躲避障礙物！',
+      '電腦：← → 切換跑道，↑ 跳躍',
+      '手機：左右滑動切換跑道，上滑跳躍',
+      '一次只有一個障礙物，不用慌！',
+      '跑得越遠速度越快。',
+    ],
+    tip: '跑越遠 + 收集金幣 → 獎勵越多',
+  },
+  starcount: {
+    icon: '🌙', title: '深夜數星星',
+    lines: [
+      '星星閃現 0.85 秒後消失，要快速記住！',
+      '從 3 個選項中選出正確的星星數量。',
+      '3 秒內未選答 = 答錯。',
+      '連續答對有金幣加成（最高 x3）！',
+      '共 10 題，越後面越多顆星。',
+    ],
+    tip: '點擊/觸碰選項按鈕作答',
+  },
+  feedchallenge: {
+    icon: '🍗', title: '餵食大挑戰',
+    lines: [
+      '按住蓄力，放開時飼料飛向移動的碗！',
+      '電腦：按住滑鼠左鍵蓄力，放開投出',
+      '手機：按住畫面蓄力，放開投出',
+      '🎯 落在碗中心 = PERFECT +30 分',
+      '✅ 落在碗邊緣 = GOOD +10 分',
+    ],
+    tip: '畫面上的金圈＝Perfect範圍，綠圈＝Good範圍',
+  },
+  wheel: {
+    icon: '🎡', title: '幸運轉盤',
+    lines: [
+      '點擊轉盤讓它旋轉！',
+      '轉盤停下後，指針指到哪裡就得到什麼獎勵。',
+      '可能得到金幣、飼料、藥品，也可能有負面效果！',
+      '每天只能轉一次。',
+    ],
+    tip: '純靠運氣，放輕鬆轉！',
+  },
+};
+
 const MiniGameSystem = (() => {
   /* ---- DOM refs ---- */
   let overlay, mgCanvas, mgCtx, hud, quitBtn, resultDiv, resultTitle, resultMsg, resultReward, resultClose;
@@ -1240,6 +1345,8 @@ const MiniGameSystem = (() => {
   let rafId = null;
   let inputLocked = false;     // 主遊戲輸入鎖（小遊戲進行中封鎖主界面按鈕點擊）
   let wheelUsedToday = null;   // 幸運轉盤每日限一次
+
+  let tutorialDiv, tutorialTitle, tutorialBody, tutorialStartBtn;
 
   function init(){
     overlay      = document.getElementById('mg-overlay');
@@ -1253,8 +1360,11 @@ const MiniGameSystem = (() => {
     resultMsg    = document.getElementById('mg-result-msg');
     resultReward = document.getElementById('mg-result-reward');
     resultClose  = document.getElementById('mg-result-close');
+    tutorialDiv       = document.getElementById('mg-tutorial');
+    tutorialTitle     = document.getElementById('mg-tutorial-title');
+    tutorialBody      = document.getElementById('mg-tutorial-body');
+    tutorialStartBtn  = document.getElementById('mg-tutorial-start');
 
-    // 依可視視窗調整 canvas 尺寸（保持正方形 / 填滿短邊）
     const side = Math.min(window.innerWidth, window.innerHeight, 420);
     mgCanvas.width  = side;
     mgCanvas.height = side;
@@ -1276,36 +1386,62 @@ const MiniGameSystem = (() => {
     UI.openModal('minigame-menu-modal');
   }
 
+  /** 顯示遊戲說明卡片，玩家按「開始！」後才真正啟動遊戲 */
+  function showTutorial(id, onConfirm){
+    const data = GAME_TUTORIALS[id];
+    if (!data){
+      // 沒有說明資料就直接開始（safety fallback）
+      onConfirm();
+      return;
+    }
+    tutorialTitle.textContent = `${data.icon} ${data.title}`;
+    tutorialBody.innerHTML = data.lines
+      .map(l => `<p style="margin:2px 0;">・${l}</p>`)
+      .join('') +
+      (data.tip ? `<p style="margin-top:8px; color:var(--c-green-dark); font-size:8px;">💡 ${data.tip}</p>` : '');
+    tutorialDiv.style.display = 'block';
+    // 每次都換綁定，避免舊回調殘留
+    const newBtn = tutorialStartBtn.cloneNode(true);
+    tutorialStartBtn.parentNode.replaceChild(newBtn, tutorialStartBtn);
+    tutorialStartBtn = newBtn;
+    tutorialStartBtn.addEventListener('click', () => {
+      tutorialDiv.style.display = 'none';
+      onConfirm();
+    });
+  }
+
   function launch(id){
     overlay.classList.remove('hidden');
     inputLocked = true;
     if (rafId){ cancelAnimationFrame(rafId); rafId = null; }
-    // 移除舊的翻牌 DOM grid（如有殘留）
     const oldGrid = document.getElementById('mg-memory-grid');
     if (oldGrid) oldGrid.remove();
 
     switch(id){
-      case 'catchfood': currentGame = CatchFoodGame; break;
-      case 'bughunt':   currentGame = BugHuntGame;   break;
-      case 'memory':    currentGame = MemoryGame;    break;
-      case 'wheel':     currentGame = WheelGame;     break;
-      case 'rps':       currentGame = RPSGame;       break;
-      case 'chickenrun': currentGame = ChickenRunGame; break;
-      case 'lanerun':   currentGame = LaneRunGame;   break;
-      case 'starcount': currentGame = StarCountGame;    break;
+      case 'catchfood':     currentGame = CatchFoodGame;     break;
+      case 'bughunt':       currentGame = BugHuntGame;       break;
+      case 'memory':        currentGame = MemoryGame;        break;
+      case 'wheel':         currentGame = WheelGame;         break;
+      case 'rps':           currentGame = RPSGame;           break;
+      case 'chickenrun':    currentGame = ChickenRunGame;    break;
+      case 'lanerun':       currentGame = LaneRunGame;       break;
+      case 'starcount':     currentGame = StarCountGame;     break;
       case 'feedchallenge': currentGame = FeedChallengeGame; break;
       default: return;
     }
-    // 凍結主遊戲數值衰減：清除主計時器，讓小雞在遊戲期間不餓死
-    if (mainTickInterval){ clearInterval(mainTickInterval); mainTickInterval = null; }
-    currentGame.start(mgCanvas, mgCtx, hud, () => finish(currentGame.getResult()));
-    const loop = () => {
-      if (!currentGame || currentGame.done) return;
-      currentGame.update();
-      currentGame.render(mgCtx);
+
+    // 先顯示說明卡片，玩家確認後才凍結主遊戲計時器並啟動
+    showTutorial(id, () => {
+      if (mainTickInterval){ clearInterval(mainTickInterval); mainTickInterval = null; }
+      currentGame.start(mgCanvas, mgCtx, hud, () => finish(currentGame.getResult()));
+      const loop = () => {
+        if (!currentGame || currentGame.done) return;
+        currentGame.update();
+        currentGame.render(mgCtx);
+        rafId = requestAnimationFrame(loop);
+      };
       rafId = requestAnimationFrame(loop);
-    };
-    rafId = requestAnimationFrame(loop);
+    });
   }
 
   function finish(result){
@@ -1350,6 +1486,7 @@ const MiniGameSystem = (() => {
 
   function hide(){
     overlay.classList.add('hidden');
+    if (tutorialDiv) tutorialDiv.style.display = 'none';
     mgCtx.clearRect(0, 0, mgCanvas.width, mgCanvas.height);
     hud.textContent = '';
   }
@@ -1361,14 +1498,16 @@ const MiniGameSystem = (() => {
     inputLocked = true;
     if (rafId){ cancelAnimationFrame(rafId); rafId = null; }
     currentGame = WheelGame;
-    currentGame.start(mgCanvas, mgCtx, hud, () => finishWheel());
-    const loop = () => {
-      if (!currentGame || currentGame.done) return;
-      currentGame.update();
-      currentGame.render(mgCtx);
+    showTutorial('wheel', () => {
+      currentGame.start(mgCanvas, mgCtx, hud, () => finishWheel());
+      const loop = () => {
+        if (!currentGame || currentGame.done) return;
+        currentGame.update();
+        currentGame.render(mgCtx);
+        rafId = requestAnimationFrame(loop);
+      };
       rafId = requestAnimationFrame(loop);
-    };
-    rafId = requestAnimationFrame(loop);
+    });
   }
 
   /** 幸運轉盤結算：WheelGame.settle() 已直接套用 GameState 數值，
@@ -3378,8 +3517,8 @@ let weatherTimerId     = null;
 const StarCountGame = (() => {
   /* ── 常數 ── */
   const TOTAL_Q      = 10;   // 總題數
-  const SHOW_MS      = 8000;  // 星星顯示時長（毫秒）
-  const ANSWER_MS    = 5000; // 作答時限（毫秒）
+  const SHOW_MS      = 850;  // 星星顯示時長（毫秒）
+  const ANSWER_MS    = 3000; // 作答時限（毫秒）
   const RESULT_MS    = 1100; // 顯示結果時長（毫秒）
   const MIN_STARS    = 3;
   const MAX_STARS    = 15;
@@ -3651,7 +3790,7 @@ const StarCountGame = (() => {
       c.fillText('星星閃現後馬上消失', W / 2, H * 0.40);
       c.fillText('從選項選出正確數量！', W / 2, H * 0.48);
       c.globalAlpha = 1;
-      _drawChick(c, W * 0.5, H * 0.75, 'idle');
+      _drawChick(c, W * 0.5, H * 0.88, 'idle');
       return;
     }
 
@@ -3726,8 +3865,8 @@ const StarCountGame = (() => {
       }
     }
 
-    // ── 小雞 ──
-    _drawChick(c, W * 0.5, H * 0.84, chickMood);
+    // ── 小雞 ── 畫在選項按鈕下方，避免遮擋
+    _drawChick(c, W * 0.5, H * 0.91, chickMood);
 
     // ── 題號 / 分數條 ──
     if (phase !== 'intro'){
@@ -3869,6 +4008,7 @@ const FeedChallengeGame = (() => {
   let phase;  // 'intro'|'charge'|'flying'|'result'|'finish'
   let ballIdx, score, totalCoins, hungerBonus;
   let charging, chargeT, power;      // 蓄力
+  let phaseStart;                    // 目前 phase 的開始時間戳（ms）
   let projX, projY, projVX, projVY;  // 飛行中的飼料
   let bowlX, bowlDir;                // 碗的位置與方向
   let resultLabel, resultColor;      // 本球結果
@@ -3910,7 +4050,7 @@ const FeedChallengeGame = (() => {
     resultLabel = ''; resultColor = '#ffe9b8'; resultTimer = 0;
     chickMood = 'idle'; chickFrame = 0;
     trailPoints = [];
-    phase = 'intro'; lastT = performance.now(); introAlpha = 0;
+    phase = 'intro'; lastT = phaseStart = performance.now(); introAlpha = 0;
 
     hudEl.textContent = `🍗 餵食大挑戰  第 1/${TOTAL_BALLS} 顆`;
 
@@ -3982,8 +4122,8 @@ const FeedChallengeGame = (() => {
     chickFrame++;
 
     if (phase === 'intro'){
-      introAlpha = Math.min(1, introAlpha + dt * 1.2);
-      if (introAlpha >= 1 && now > (lastT - dt * 1000 + 1600)) phase = 'charge';
+      introAlpha = Math.min(1, (now - phaseStart) / 900);
+      if (introAlpha >= 1) phase = 'charge';
       return;
     }
 
