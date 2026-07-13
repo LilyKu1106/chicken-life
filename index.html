@@ -304,7 +304,23 @@
        蓋在 #game-stage 上方；active 時鎖定主遊戲輸入
   ============================================================= -->
   <div id="mg-overlay" class="hidden">
+    <!-- 遊戲開始前的操作說明卡片 -->
     <canvas id="mg-canvas"></canvas>
+    <div id="mg-hud" class="pixel-panel"></div>
+    <button id="mg-quit-btn" class="pixel-panel">✕ 離開</button>
+
+    <!-- 操作說明卡片：放在 canvas 之後確保 DOM 層疊順序在上方，z-index 明確蓋過 canvas -->
+    <div id="mg-tutorial" class="pixel-panel" style="
+      position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+      width:min(88%, 340px); z-index:20; padding:0; display:none;">
+      <div class="modal-header">
+        <span class="pixel-title" id="mg-tutorial-title">遊戲說明</span>
+      </div>
+      <div id="mg-tutorial-body" class="modal-body" style="font-size:9px; line-height:1.9;"></div>
+      <div style="padding:8px; border-top:2px solid var(--c-ink);">
+        <button id="mg-tutorial-start" class="action-btn" style="width:100%; font-size:12px;">▶ 開始！</button>
+      </div>
+    </div>
     <div id="mg-hud" class="pixel-panel"></div>
     <button id="mg-quit-btn" class="pixel-panel">✕ 離開</button>
     <div id="mg-result" class="modal hidden">

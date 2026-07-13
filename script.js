@@ -1400,12 +1400,14 @@ const MiniGameSystem = (() => {
       .join('') +
       (data.tip ? `<p style="margin-top:8px; color:var(--c-green-dark); font-size:8px;">💡 ${data.tip}</p>` : '');
     tutorialDiv.style.display = 'block';
+    mgCanvas.style.pointerEvents = 'none';  // 防止 canvas 攔截教學卡片上的點擊
     // 每次都換綁定，避免舊回調殘留
     const newBtn = tutorialStartBtn.cloneNode(true);
     tutorialStartBtn.parentNode.replaceChild(newBtn, tutorialStartBtn);
     tutorialStartBtn = newBtn;
     tutorialStartBtn.addEventListener('click', () => {
       tutorialDiv.style.display = 'none';
+      mgCanvas.style.pointerEvents = '';    // 恢復 canvas 輸入
       onConfirm();
     });
   }
@@ -1487,6 +1489,7 @@ const MiniGameSystem = (() => {
   function hide(){
     overlay.classList.add('hidden');
     if (tutorialDiv) tutorialDiv.style.display = 'none';
+    if (mgCanvas) mgCanvas.style.pointerEvents = '';
     mgCtx.clearRect(0, 0, mgCanvas.width, mgCanvas.height);
     hud.textContent = '';
   }
