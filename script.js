@@ -1487,11 +1487,30 @@ const MiniGameSystem = (() => {
   }
 
   function hide(){
+    // 1. 隱藏最外層的黑底遮罩
     overlay.classList.add('hidden');
-    if (tutorialDiv) tutorialDiv.style.display = 'none';
+
+    // 2. 強制隱藏說明字卡與結算視窗（原本只靠 overlay hidden 不夠，
+    //    這兩個 div 若沒有明確設 display:none，依然佔據點擊判定區域）
+    if (tutorialDiv){
+      tutorialDiv.style.display = 'none';
+      tutorialDiv.classList.add('hidden');
+    }
+    if (resultDiv){
+      resultDiv.classList.add('hidden');
+    }
+
+    // 3. 清除畫布狀態與 pointer-events 鎖
     if (mgCanvas) mgCanvas.style.pointerEvents = '';
     mgCtx.clearRect(0, 0, mgCanvas.width, mgCanvas.height);
     hud.textContent = '';
+
+    // 4. 確保翻牌記憶的 DOM 格子被移除
+    const oldGrid = document.getElementById('mg-memory-grid');
+    if (oldGrid) oldGrid.remove();
+
+    // 5. 解除輸入鎖定
+    inputLocked = false;
   }
 
   /** 幸運轉盤專用啟動器：跳過小遊戲選單，也跳過 +20 baseHappy，
