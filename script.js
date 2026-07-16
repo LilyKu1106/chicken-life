@@ -1041,14 +1041,17 @@ const GameState = {
     UI.playOneShot('happy', 1200);
   },
 
+  /** 洗澡：清潔度大幅提升、順便清掉便便（原本的「清便便」按鈕功能已合併進來） */
   bath(){
     if (!this.alive) return;
+    const hadPoop = this.poopCount > 0;
     this.clean = clamp(this.clean + 35);
     this.happy = clamp(this.happy + 3);
     this.poopCount = 0;
     UI.clearPoop();
     SoundManager.click();
     UI.playOneShot('clean', 1300);
+    UI.toast(hadPoop ? '🛁 洗香香，順便清掉便便了！' : '🛁 洗澡完成，乾乾淨淨！');
   },
 
   sleepToggle(){
@@ -1078,13 +1081,6 @@ const GameState = {
     }
     SoundManager.click();
     UI.playOneShot('idle', 800);
-  },
-
-  clean_(){
-    this.poopCount = 0;
-    this.clean = clamp(this.clean + 15);
-    UI.clearPoop();
-    SoundManager.pop();
   },
 
   /** 手動使用背包中的消耗品（目前僅活力藥水，未來可依 id 擴充其他效果） */
@@ -4660,7 +4656,6 @@ const UI = {
           case 'bath': GameState.bath(); break;
           case 'sleep': GameState.sleepToggle(); break;
           case 'doctor': GameState.doctor(); break;
-          case 'clean': GameState.clean_(); break;
           case 'work': GameState.work(); break;
           case 'shop': this.openModal('shop-modal'); this.renderShop(); break;
           case 'diary': this.openModal('diary-modal'); this.renderDiary(); break;
