@@ -1395,6 +1395,8 @@ const MiniGameSystem = (() => {
       .map(l => `<p style="margin:2px 0;">・${l}</p>`)
       .join('') +
       (data.tip ? `<p style="margin-top:8px; color:var(--c-green-dark); font-size:8px;">💡 ${data.tip}</p>` : '');
+    tutorialDiv.classList.remove('hidden'); // hide() 會加上 .hidden（!important），這裡務必移除，
+                                              // 否則第二次以後 tutorialDiv.style.display='block' 會被 CSS 蓋掉，永遠看不見
     tutorialDiv.style.display = 'block';
     mgCanvas.style.pointerEvents = 'none';  // 防止 canvas 攔截教學卡片上的點擊
     // 每次都換綁定，避免舊回調殘留
