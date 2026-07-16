@@ -847,7 +847,7 @@ const GameState = {
   ownedWear: { hat:false, glasses:false, scarf:false, clothes:false,
                crown:false, bowtie:false, headphones:false, backpack:false, tie:false },
   lastLoginDate: null,
-  settings: { sfx: true },
+  settings: { sfx: false },
   createdAt: Date.now(),
   poopCount: 0,
 
@@ -1432,9 +1432,15 @@ const MiniGameSystem = (() => {
       default: return;
     }
 
-    // 先顯示說明卡片，玩家確認後才凍結主遊戲計時器並啟動
+    // 凍結主計時器與獨立排程器：在顯示教學卡片「之前」就先凍結，
+    // 確保無論玩家是確認開始還是在教學畫面按「離開」，凍結/解凍狀態都一致，
+    // 不會有「教學畫面就離開時 finish() 誤重啟已在跑的排程器」而產生重複排程的問題。
+    if (mainTickInterval){ clearInterval(mainTickInterval); mainTickInterval = null; }
+    clearTimeout(randomEventTimerId);
+    clearTimeout(weatherTimerId);
+
+    // 顯示說明卡片，玩家確認後才真正啟動遊戲主迴圈
     showTutorial(id, () => {
-      if (mainTickInterval){ clearInterval(mainTickInterval); mainTickInterval = null; }
       currentGame.start(mgCanvas, mgCtx, hud, () => finish(currentGame.getResult()));
       const loop = () => {
         if (!currentGame || currentGame.done) return;
@@ -1460,6 +1466,10 @@ const MiniGameSystem = (() => {
     if (!mainTickInterval){
       mainTickInterval = setInterval(() => { GameState.simulate(); UI.updateStats(); }, TICK_MS);
     }
+    // 重啟隨機事件與天氣排程器（launch() 進入小遊戲時已 clearTimeout 凍結，
+    // 這裡必須重新呼叫，否則玩過一次小遊戲後，隨機事件和天氣就永遠停止了）
+    scheduleRandomEvent();
+    scheduleWeather();
 
     if (!result){ hide(); return; }
 
@@ -1484,6 +1494,10 @@ const MiniGameSystem = (() => {
     resultMsg.textContent    = result.summary;
     resultReward.textContent = rewardParts.length ? `獲得：${rewardParts.join('  ')}` : '這次沒有獎勵...';
     resultDiv.classList.remove('hidden');
+    // 結算畫面顯示期間隱藏「離開」與 HUD（它們是 position:fixed，
+    // z-index 高於結算視窗，會浮在畫面上方蓋住結算內容，且誤觸會提早關閉結算畫面）
+    quitBtn.style.display = 'none';
+    hud.style.display = 'none';
   }
 
   function hide(){
@@ -1504,6 +1518,8 @@ const MiniGameSystem = (() => {
     if (mgCanvas) mgCanvas.style.pointerEvents = '';
     mgCtx.clearRect(0, 0, mgCanvas.width, mgCanvas.height);
     hud.textContent = '';
+    hud.style.display = '';       // 還原結算畫面時被隱藏的 HUD
+    quitBtn.style.display = '';   // 還原結算畫面時被隱藏的離開按鈕
 
     // 4. 確保翻牌記憶的 DOM 格子被移除
     const oldGrid = document.getElementById('mg-memory-grid');
@@ -1520,6 +1536,10 @@ const MiniGameSystem = (() => {
     inputLocked = true;
     if (rafId){ cancelAnimationFrame(rafId); rafId = null; }
     currentGame = WheelGame;
+    // 凍結時機與 launch() 一致：教學卡片顯示前就先凍結，避免教學畫面按離開時狀態不一致
+    if (mainTickInterval){ clearInterval(mainTickInterval); mainTickInterval = null; }
+    clearTimeout(randomEventTimerId);
+    clearTimeout(weatherTimerId);
     showTutorial('wheel', () => {
       currentGame.start(mgCanvas, mgCtx, hud, () => finishWheel());
       const loop = () => {
@@ -1537,6 +1557,13 @@ const MiniGameSystem = (() => {
   function finishWheel(){
     if (rafId){ cancelAnimationFrame(rafId); rafId = null; }
     inputLocked = false;
+    // 解凍：與 finish() 一致，重設 lastTickAt 並重啟三個計時器
+    GameState.lastTickAt = Date.now();
+    if (!mainTickInterval){
+      mainTickInterval = setInterval(() => { GameState.simulate(); UI.updateStats(); }, TICK_MS);
+    }
+    scheduleRandomEvent();
+    scheduleWeather();
     const result = WheelGame.getResult();
     if (!result){ hide(); return; }
     const rewardParts = [];
@@ -1550,6 +1577,8 @@ const MiniGameSystem = (() => {
     resultMsg.textContent    = result.summary;
     resultReward.textContent = rewardParts.length ? `獲得：${rewardParts.join('  ')}` : '這次什麼都沒有...';
     resultDiv.classList.remove('hidden');
+    quitBtn.style.display = 'none';
+    hud.style.display = 'none';
   }
 
   document.addEventListener('DOMContentLoaded', init);

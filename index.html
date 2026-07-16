@@ -304,12 +304,9 @@
        蓋在 #game-stage 上方；active 時鎖定主遊戲輸入
   ============================================================= -->
   <div id="mg-overlay" class="hidden">
-    <!-- 遊戲開始前的操作說明卡片 -->
     <canvas id="mg-canvas"></canvas>
-    <div id="mg-hud" class="pixel-panel"></div>
-    <button id="mg-quit-btn" class="pixel-panel">✕ 離開</button>
 
-    <!-- 操作說明卡片：放在 canvas 之後確保 DOM 層疊順序在上方，z-index 明確蓋過 canvas -->
+    <!-- 操作說明卡片：說明結束後才會啟動遊戲主迴圈 -->
     <div id="mg-tutorial" class="pixel-panel" style="
       position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
       width:min(88%, 340px); z-index:20; padding:0; display:none;">
@@ -321,8 +318,11 @@
         <button id="mg-tutorial-start" class="action-btn" style="width:100%; font-size:12px;">▶ 開始！</button>
       </div>
     </div>
+
+    <!-- HUD 與離開按鈕：position:fixed（見 style.css），保證永遠可點擊 -->
     <div id="mg-hud" class="pixel-panel"></div>
     <button id="mg-quit-btn" class="pixel-panel">✕ 離開</button>
+
     <div id="mg-result" class="modal hidden">
       <div class="modal-box pixel-panel" style="width:min(80vw,300px); text-align:center;">
         <div class="modal-header"><span class="pixel-title" id="mg-result-title">結算</span></div>
@@ -333,6 +333,7 @@
         </div>
       </div>
     </div>
+
   </div>
 
   <!-- ============================================================
