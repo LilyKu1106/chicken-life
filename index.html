@@ -305,19 +305,6 @@
   <div id="mg-overlay" class="hidden">
     <canvas id="mg-canvas"></canvas>
 
-    <!-- 操作說明卡片：說明結束後才會啟動遊戲主迴圈 -->
-    <div id="mg-tutorial" class="pixel-panel" style="
-      position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-      width:min(88%, 340px); z-index:20; padding:0; display:none;">
-      <div class="modal-header">
-        <span class="pixel-title" id="mg-tutorial-title">遊戲說明</span>
-      </div>
-      <div id="mg-tutorial-body" class="modal-body" style="font-size:9px; line-height:1.9;"></div>
-      <div style="padding:8px; border-top:2px solid var(--c-ink);">
-        <button id="mg-tutorial-start" class="action-btn" style="width:100%; font-size:12px;">▶ 開始！</button>
-      </div>
-    </div>
-
     <!-- HUD 與離開按鈕：position:fixed（見 style.css），保證永遠可點擊 -->
     <div id="mg-hud" class="pixel-panel"></div>
     <button id="mg-quit-btn" class="pixel-panel">✕ 離開</button>
@@ -357,5 +344,16 @@
   <div id="toast" class="hidden pixel-panel"></div>
 
   <script src="script.js"></script>
+  <!-- 小遊戲已拆分為獨立檔案，必須在 script.js 之後載入
+       （依賴 script.js 結尾處掛到 window 上的 PALETTE / GameState / SoundManager / UI 等） -->
+  <script src="minigames/catchfood.js"></script>
+  <script src="minigames/bughunt.js"></script>
+  <script src="minigames/memory.js"></script>
+  <script src="minigames/wheel.js"></script>
+  <script src="minigames/rps.js"></script>
+  <script src="minigames/chickenrun.js"></script>
+  <script src="minigames/lanerun.js"></script>
+  <script src="minigames/starcount.js"></script>
+  <script src="minigames/feedchallenge.js"></script>
 </body>
 </html>
